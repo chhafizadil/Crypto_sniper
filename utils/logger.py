@@ -35,12 +35,12 @@ def log_signal_to_csv(signal):
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
         data = pd.DataFrame({
             "symbol": [signal.get("symbol", "")],
-            "price": [signal.get("entry", 0)],
+            "price": [signal.get("entry", "")],
             "direction": [signal.get("direction", "")],
-            "tp1": [signal.get("tp1", 0)],
-            "tp2": [signal.get("tp2", 0)],
-            "tp3": [signal.get("tp3", 0)],
-            "sl": [signal.get("sl", 0)],
+            "tp1": [signal.get("tp1", "")],
+            "tp2": [signal.get("tp2", "")],
+            "tp3": [signal.get("tp3", "")],
+            "sl": [signal.get("sl", "")],
             "confidence": [signal.get("confidence", 0)],
             "trade_type": [signal.get("trade_type", "")],
             "timestamp": [timestamp],
