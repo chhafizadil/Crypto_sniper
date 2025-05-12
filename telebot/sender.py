@@ -1,29 +1,28 @@
+# telebot/sender.py
 import httpx
 import asyncio
 import pandas as pd
-from utils.logger import log
-from utils.helpers import round_price
+from utils.logger import logger
+from utils.helpers import format_price
 
 BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
 CHAT_ID = "-4694205383"
 
 async def send_telegram_signal(symbol: str, signal: dict):
     try:
-        # Format signal using round_price from utils/helpers.py
-        entry = round_price(signal.get("entry", 0))
-        tp1 = round_price(signal.get("tp1", 0))
-        tp2 = round_price(signal.get("tp2", 0))
-        tp3 = round_price(signal.get("tp3", 0))
-        sl = round_price(signal.get("sl", 0))
+        entry = signal.get("entry", "0")
+        tp1 = signal.get("tp1", "0")
+        tp2 = signal.get("tp2", "0")
+        tp3 = signal.get("tp3", "0")
+        sl = signal.get("sl", "0")
         confidence = signal.get("confidence", 0)
         direction = signal.get("direction", "Unknown")
         timeframe = signal.get("timeframe", "Unknown")
         trade_type = signal.get("trade_type", "Scalping")
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
 
-        # Check if TP1 and entry are the same
         if entry == tp1:
-            log.warning(f"[{symbol}] TP1 ({tp1}) and Entry ({entry}) are the same, check ATR or rounding")
+            logger.warning(f"[{symbol}] TP1 ({tp1}) and Entry ({entry}) are the same, check ATR or rounding")
 
         message = (
             f"🚀 *{symbol} Signal*\n\n"
@@ -50,12 +49,12 @@ async def send_telegram_signal(symbol: str, signal: dict):
                     }
                     response = await client.post(url, json=payload)
                     if response.status_code == 200:
-                        log.info(f"Telegram signal sent for {symbol}")
+                        logger.info(f"Telegram signal sent for {symbol}")
                         return
                     else:
-                        log.error(f"Failed to send Telegram signal: {response.text}")
+                        logger.error(f"Failed to send Telegram signal: {response.text}")
                 except Exception as e:
-                    log.error(f"Error sending Telegram signal: {e}")
-                await asyncio.sleep(2)
+                    logger.error(f"Error sending Telegram signal: {e}")
+                await asyncio.sleep(10)
     except Exception as e:
-        log.error(f"Error in send_telegram_signal: {e}")
+        logger.error(f"Error in send_telegram_signal: {e}")
