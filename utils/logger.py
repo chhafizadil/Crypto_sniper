@@ -4,7 +4,6 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 import pandas as pd
 import pytz
-import shutil
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -29,21 +28,13 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 logger.propagate = False
 
-def log(message, level='INFO'):
-    if level == 'INFO':
-        logger.info(message)
-    elif level == 'ERROR':
-        logger.error(message)
-    elif level == 'WARNING':
-        logger.warning(message)
-
 def log_signal_to_csv(signal):
     try:
         csv_path = "logs/signals_log.csv"
-        timestamp = datetime.fromtimestamp(signal.get("timestamp", 0) / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
         data = pd.DataFrame({
             "symbol": [signal.get("symbol", "")],
-            "price": [signal.get("price", 0)],
+            "price": [signal.get("entry", 0)],
             "direction": [signal.get("direction", "")],
             "tp1": [signal.get("tp1", 0)],
             "tp2": [signal.get("tp2", 0)],
@@ -55,8 +46,7 @@ def log_signal_to_csv(signal):
             "tp1_possibility": [signal.get("tp1_possibility", 0)],
             "tp2_possibility": [signal.get("tp2_possibility", 0)],
             "tp3_possibility": [signal.get("tp3_possibility", 0)],
-            "indicators_used": [signal.get("indicators_used", "")],
-            "backtest_result": [signal.get("backtest_result", 0)],
+            "conditions": [", ".join(signal.get("conditions", []))],
             "volume": [signal.get("volume", 0)],
             "status": ["pending"]
         })
@@ -68,15 +58,14 @@ def log_signal_to_csv(signal):
 
         if not data.empty:
             data.to_csv(csv_path, index=False)
-            log(f"Signal logged to CSV for {signal.get('symbol', '')}")
+            logger.info(f"Signal logged to CSV for {signal.get('symbol', '')}")
         else:
-            log("No valid data to log to CSV", level='ERROR')
+            logger.error("No valid data to log to CSV")
 
-        # Archive old logs weekly
         archive_old_logs(csv_path)
 
     except Exception as e:
-        log(f"Error logging signal to CSV: {e}", level='ERROR')
+        logger.error(f"Error logging signal to CSV: {e}")
 
 def archive_old_logs(csv_path):
     try:
@@ -97,6 +86,6 @@ def archive_old_logs(csv_path):
             old_data.to_csv(archive_path, index=False)
             new_data = df[df['timestamp'].dt.date >= week_ago.date()]
             new_data.to_csv(csv_path, index=False)
-            log(f"Archived {len(old_data)} old signals to {archive_path}", level='INFO')
+            logger.info(f"Archived {len(old_data)} old signals to {archive_path}")
     except Exception as e:
-        log(f"Error archiving logs: {e}", level='ERROR')
+        logger.error(f"Error archiving logs: {e}")
