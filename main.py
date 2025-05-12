@@ -5,7 +5,7 @@ import ccxt.async_support as ccxt
 from fastapi import FastAPI
 from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
-from predictors.random_forest import RandomForestPredictor
+from models.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
 
@@ -32,8 +32,8 @@ CONFIDENCE_THRESHOLD = 60.0  # For combined signal
 COOLDOWN_PERIOD = 4 * 3600  # 4 hours in seconds
 
 # Initialize predictor
-predictor = RandomForestPredictor()
-log.info("Random Forest model loaded successfully")
+predictor = SignalPredictor()
+log.info("Signal Predictor initialized successfully")
 
 # Cooldown tracking
 cooldowns = {}  # {symbol: timestamp}
