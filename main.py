@@ -128,7 +128,7 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(1)  # Increased delay to avoid API rate limits
+            await asyncio.sleep(2)  # Increased delay to avoid API rate limits
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
     await asyncio.sleep(60)  # Wait before next scan
@@ -162,7 +162,12 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    try:
+        # Lightweight check to ensure bot is responsive
+        return {"status": "healthy", "timestamp": str(datetime.utcnow())}
+    except Exception as e:
+        log.error(f"Health check failed: {str(e)}")
+        return {"status": "unhealthy", "error": str(e)}, 500
 
 if __name__ == "__main__":
     import uvicorn
