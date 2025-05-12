@@ -1,7 +1,9 @@
 import pandas as pd
 import numpy as np
 import logging
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
+import ccxt.async_support as ccxt
+import asyncio
 
 class TechnicalAnalysis:
     def __init__(self):
@@ -112,3 +114,74 @@ class TechnicalAnalysis:
         typical_price = (df['high'] + df['low'] + df['close']) / 3
         vwap = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
         return vwap
+
+async def analyze_symbol_multi_timeframe(
+    exchange: ccxt.Exchange,
+    symbol: str,
+    timeframes: list,
+    predictor,
+    bars: int = 100
+) -> Optional[Dict]:
+    """Analyze a symbol across multiple timeframes."""
+    log = logging.getLogger("crypto-signal-bot")
+    signals = []
+    ta = TechnicalAnalysis()
+
+    for timeframe in timeframes:
+        log.info(f"[{symbol}] Starting analysis on {timeframe}")
+        try:
+            # Fetch OHLCV data
+            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=bars)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+            # Calculate indicators
+            df = await ta.calculate_indicators(df)
+            if df.empty or len(df) < 20:
+                log.warning(f"[{symbol}] Insufficient data for {timeframe}")
+                continue
+
+            # Prepare features for predictor
+            features = {
+                'rsi': df['rsi'].iloc[-1],
+                'macd': df['macd'].iloc[-1],
+                'macd_signal': df['macd_signal'].iloc[-1],
+                'bb_upper': df['bb_upper'].iloc[-1],
+                'bb_lower': df['bb_lower'].iloc[-1],
+                'atr': df['atr'].iloc[-1],
+                'volume': df['volume'].iloc[-1],
+                'volume_sma_20': df['volume_sma_20'].iloc[-1],
+                'ema_20': df['ema_20'].iloc[-1],
+                'ema_50': df['ema_50'].iloc[-1],
+                'stoch_rsi': df['stoch_rsi'].iloc[-1],
+                'adx': df['adx'].iloc[-1],
+                'cci': df['cci'].iloc[-1],
+                'vwap': df['vwap'].iloc[-1],
+                'momentum': df['momentum'].iloc[-1]
+            }
+            log.info(f"[{symbol}] Features prepared: {features}")
+
+            # Get prediction
+            signal = await predictor.predict_signal(symbol, df, timeframe)
+            if signal:
+                signals.append({
+                    'timeframe': timeframe,
+                    'direction': signal['direction'],
+                    'confidence': signal['confidence']
+                })
+                log.info(f"[{symbol}] Signal for {timeframe}: {signal['direction']}, Confidence: {signal['confidence']:.2f}%")
+            else:
+                log.info(f"[{symbol}] No signal for {timeframe}")
+
+        except Exception as e:
+            log.error(f"[{symbol}] Error in analysis for {timeframe}: {str(e)}")
+            continue
+
+    if not signals:
+        log.info(f"[{symbol}] No valid signals across any timeframe")
+        return None
+
+    return {
+        'symbol': symbol,
+        'signals': signals
+    }
