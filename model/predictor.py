@@ -12,9 +12,9 @@ class SignalPredictor:
     def __init__(self):
         self.indicators = [
             "rsi", "macd", "atr", "volume", "bollinger", "volume_sma_20", 
-            "ema_20", "ema_50", "stoch_rsi", "adx", "cci", "vwap", "momentum"
+            "ema_20", "ema_50", "stoch_rsi", "adx", "cci", "vwap", "momentum", "obv"
         ]
-        self.candle_patterns = ["doji", "engulfing", "harami"]
+        self.candle_patterns = ["doji", "engulfing", "harami", "morning_star", "evening_star"]
         self.previous_signals = {}
         self.exchange = ccxt.binance()
         logger.info("Signal Predictor initialized with %d indicators and candle patterns", len(self.indicators))
@@ -43,6 +43,7 @@ class SignalPredictor:
             df['cci'] = self._calculate_cci(df, 20)
             df['vwap'] = self._calculate_vwap(df)
             df['momentum'] = df['close'].diff(10)
+            df['obv'] = self._calculate_obv(df)
             logger.info("Indicators calculated: %s", ", ".join(self.indicators))
             return df
         except Exception as e:
@@ -110,16 +111,29 @@ class SignalPredictor:
         vwap = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
         return vwap
 
+    def _calculate_obv(self, df: pd.DataFrame) -> pd.Series:
+        obv = [0]
+        for i in range(1, len(df)):
+            if df['close'].iloc[i] > df['close'].iloc[i-1]:
+                obv.append(obv[-1] + df['volume'].iloc[i])
+            elif df['close'].iloc[i] < df['close'].iloc[i-1]:
+                obv.append(obv[-1] - df['volume'].iloc[i])
+            else:
+                obv.append(obv[-1])
+        return pd.Series(obv, index=df.index)
+
     async def detect_candle_patterns(self, df: pd.DataFrame) -> list:
         patterns = []
         try:
-            for i in range(1, len(df)):
+            for i in range(2, len(df)):
                 open_price = df['open'].iloc[i]
                 close_price = df['close'].iloc[i]
                 high_price = df['high'].iloc[i]
                 low_price = df['low'].iloc[i]
                 prev_open = df['open'].iloc[i-1]
                 prev_close = df['close'].iloc[i-1]
+                prev2_open = df['open'].iloc[i-2]
+                prev2_close = df['close'].iloc[i-2]
                 
                 body = abs(close_price - open_price)
                 if body < (high_price - low_price) * 0.1:
@@ -132,6 +146,14 @@ class SignalPredictor:
                 if (body < abs(prev_open - prev_close) * 0.5 and
                     high_price < prev_close and low_price > prev_open):
                     patterns.append("harami")
+                
+                if (prev2_close > prev2_open and prev_close < prev_open and
+                    close_price > prev_open and close_price > (prev2_open + prev2_close) / 2):
+                    patterns.append("morning_star")
+                
+                if (prev2_close < prev2_open and prev_close > prev_open and
+                    close_price < prev_open and close_price < (prev2_open + prev2_close) / 2):
+                    patterns.append("evening_star")
             return patterns
         except Exception as e:
             logger.error("Error detecting candle patterns: %s", str(e))
@@ -157,34 +179,36 @@ class SignalPredictor:
             conditions = []
 
             if (latest['rsi'] < 35 and latest['macd'] > latest['macd_signal'] and latest['ema_20'] > latest['ema_50'] and
-                latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0):
+                latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0 and
+                latest['obv'] > df['obv'].shift(1)):
                 direction = "LONG"
                 confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum")
+                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, rising OBV")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
                 if latest['close'] > latest['vwap']:
                     confidence += 10
                     conditions.append("Price above VWAP")
-                if "engulfing" in patterns or "harami" in patterns:
+                if any(p in patterns for p in ["engulfing", "harami", "morning_star"]):
                     confidence += 10
-                    conditions.append(f"Bullish pattern: {patterns[-1]}")
+                    conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
             elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
-                  latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0):
+                  latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0 and
+                  latest['obv'] < df['obv'].shift(1)):
                 direction = "SHORT"
                 confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum")
+                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, falling OBV")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
                 if latest['close'] < latest['vwap']:
                     confidence += 10
                     conditions.append("Price below VWAP")
-                if "engulfing" in patterns or "harami" in patterns:
+                if any(p in patterns for p in ["engulfing", "harami", "evening_star"]):
                     confidence += 10
-                    conditions.append(f"Bearish pattern: {patterns[-1]}")
+                    conditions.append(f"Bearish pattern: {patterns[-1] if patterns else 'none'}")
 
             timeframe_weights = {"15m": 0.85, "1h": 0.9, "4h": 1.0, "1d": 1.1}
             confidence *= timeframe_weights.get(timeframe, 1.0)
