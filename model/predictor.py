@@ -1,3 +1,4 @@
+# model/predictor.py
 import pandas as pd
 import numpy as np
 import logging
@@ -5,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional
 from utils.logger import logger
 import ccxt.async_support as ccxt
+from utils.helpers import format_price
 
 class SignalPredictor:
     def __init__(self):
@@ -33,6 +35,7 @@ class SignalPredictor:
             df['macd'], df['macd_signal'] = self._calculate_macd(df['close'])
             df['atr'] = self._calculate_atr(df, 14)
             df['volume_sma_20'] = df['volume'].rolling(window=20).mean()
+            df['bb_upper'], df['bb_lower'] = self._calculate_bollinger_bands(df['close'])
             df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
             df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
             df['stoch_rsi'] = self._calculate_stoch_rsi(df['rsi'], 14)
@@ -68,6 +71,13 @@ class SignalPredictor:
         true_range = ranges.max(axis=1)
         return true_range.rolling(window=period).mean()
 
+    def _calculate_bollinger_bands(self, series: pd.Series, period: int = 20) -> tuple:
+        sma = series.rolling(window=period).mean()
+        std = series.rolling(window=period).std()
+        upper_band = sma + (std * 2)
+        lower_band = sma - (std * 2)
+        return upper_band, lower_band
+
     def _calculate_stoch_rsi(self, rsi: pd.Series, period: int) -> pd.Series:
         min_rsi = rsi.rolling(window=period).min()
         max_rsi = rsi.rolling(window=period).max()
@@ -100,6 +110,33 @@ class SignalPredictor:
         vwap = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
         return vwap
 
+    async def detect_candle_patterns(self, df: pd.DataFrame) -> list:
+        patterns = []
+        try:
+            for i in range(1, len(df)):
+                open_price = df['open'].iloc[i]
+                close_price = df['close'].iloc[i]
+                high_price = df['high'].iloc[i]
+                low_price = df['low'].iloc[i]
+                prev_open = df['open'].iloc[i-1]
+                prev_close = df['close'].iloc[i-1]
+                
+                body = abs(close_price - open_price)
+                if body < (high_price - low_price) * 0.1:
+                    patterns.append("doji")
+                
+                if (close_price > prev_open and open_price < prev_close and
+                    close_price > prev_close and open_price < prev_open):
+                    patterns.append("engulfing")
+                
+                if (body < abs(prev_open - prev_close) * 0.5 and
+                    high_price < prev_close and low_price > prev_open):
+                    patterns.append("harami")
+            return patterns
+        except Exception as e:
+            logger.error("Error detecting candle patterns: %s", str(e))
+            return []
+
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
         try:
             if symbol in self.previous_signals and timeframe in self.previous_signals[symbol]:
@@ -113,6 +150,7 @@ class SignalPredictor:
                 logger.warning("[%s] Insufficient data for %s", symbol, timeframe)
                 return None
 
+            patterns = await self.detect_candle_patterns(df)
             latest = df.iloc[-1]
             confidence = 0.0
             direction = None
@@ -129,6 +167,9 @@ class SignalPredictor:
                 if latest['close'] > latest['vwap']:
                     confidence += 10
                     conditions.append("Price above VWAP")
+                if "engulfing" in patterns or "harami" in patterns:
+                    confidence += 10
+                    conditions.append(f"Bullish pattern: {patterns[-1]}")
 
             elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
                   latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0):
@@ -141,6 +182,9 @@ class SignalPredictor:
                 if latest['close'] < latest['vwap']:
                     confidence += 10
                     conditions.append("Price below VWAP")
+                if "engulfing" in patterns or "harami" in patterns:
+                    confidence += 10
+                    conditions.append(f"Bearish pattern: {patterns[-1]}")
 
             timeframe_weights = {"15m": 0.85, "1h": 0.9, "4h": 1.0, "1d": 1.1}
             confidence *= timeframe_weights.get(timeframe, 1.0)
@@ -157,11 +201,11 @@ class SignalPredictor:
                     "timeframe": timeframe,
                     "direction": direction,
                     "confidence": confidence,
-                    "entry": round(current_price, precision),
-                    "tp1": round(current_price + atr * 1.2 if direction == "LONG" else current_price - atr * 1.2, precision),
-                    "tp2": round(current_price + atr * 1.8 if direction == "LONG" else current_price - atr * 1.8, precision),
-                    "tp3": round(current_price + atr * 2.5 if direction == "LONG" else current_price - atr * 2.5, precision),
-                    "sl": round(current_price - atr * 1.2 if direction == "LONG" else current_price + atr * 1.2, precision),
+                    "entry": format_price(current_price, symbol),
+                    "tp1": format_price(current_price + atr * 1.2 if direction == "LONG" else current_price - atr * 1.2, symbol),
+                    "tp2": format_price(current_price + atr * 1.8 if direction == "LONG" else current_price - atr * 1.8, symbol),
+                    "tp3": format_price(current_price + atr * 2.5 if direction == "LONG" else current_price - atr * 2.5, symbol),
+                    "sl": format_price(current_price - atr * 1.2 if direction == "LONG" else current_price + atr * 1.2, symbol),
                     "tp1_possibility": 0.75,
                     "tp2_possibility": 0.55,
                     "tp3_possibility": 0.35,
