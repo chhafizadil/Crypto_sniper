@@ -5,7 +5,7 @@ import ccxt.async_support as ccxt
 from fastapi import FastAPI
 from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
-from model.predictor import SignalPredictor
+from models.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
 
@@ -96,33 +96,48 @@ async def process_symbol(symbol: str):
         return
     
     # Analyze across all timeframes
-    signal = await analyze_symbol_multi_timeframe(EXCHANGE, symbol, TIMEFRAMES, predictor)
+    result = await analyze_symbol_multi_timeframe(EXCHANGE, symbol, TIMEFRAMES, predictor)
     
-    if signal:
-        # Add to cooldown
-        cooldowns[symbol] = datetime.utcnow()
-        log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
-        
-        # Calculate entry, TP, and SL based on ATR and confidence
-        latest_df = timeframe_data["15m"]  # Use 15m for latest price
-        current_price = latest_df['close'].iloc[-1]
-        atr = latest_df['atr'].iloc[-1] if 'atr' in latest_df else 0.01 * current_price
-        
-        signal.update({
-            "entry": current_price,
-            "tp1": current_price + atr * 0.5 if signal["direction"] == "LONG" else current_price - atr * 0.5,
-            "tp2": current_price + atr * 1.0 if signal["direction"] == "LONG" else current_price - atr * 1.0,
-            "tp3": current_price + atr * 1.5 if signal["direction"] == "LONG" else current_price - atr * 1.5,
-            "sl": current_price - atr * 0.75 if signal["direction"] == "LONG" else current_price + atr * 0.75,
-            "trade_type": "Normal" if signal["confidence"] >= 80 else "Scalping"
-        })
-        
-        await send_telegram_signal(symbol, signal)
-        log.info(f"[{signal['symbol']}] Telegram signal sent successfully")
-        await save_signal_to_csv(signal)
-        log.info(f"✅ Signal SENT ✅")
+    if result and 'signals' in result and result['signals']:
+        # Select the signal with the highest confidence
+        best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
+        if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
+            # Fetch the full signal details for the best timeframe
+            df = timeframe_data.get(best_signal['timeframe'])
+            if df is None:
+                log.warning(f"[{symbol}] No data for timeframe {best_signal['timeframe']}")
+                return
+                
+            full_signal = await predictor.predict_signal(symbol, df, best_signal['timeframe'])
+            if full_signal:
+                # Add to cooldown
+                cooldowns[symbol] = datetime.utcnow()
+                log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
+                
+                # Calculate entry, TP, and SL based on ATR and confidence
+                latest_df = timeframe_data["15m"]  # Use 15m for latest price
+                current_price = latest_df['close'].iloc[-1]
+                atr = latest_df['atr'].iloc[-1] if 'atr' in latest_df else 0.01 * current_price
+                
+                full_signal.update({
+                    "entry": current_price,
+                    "tp1": current_price + atr * 0.5 if full_signal["direction"] == "LONG" else current_price - atr * 0.5,
+                    "tp2": current_price + atr * 1.0 if full_signal["direction"] == "LONG" else current_price - atr * 1.0,
+                    "tp3": current_price + atr * 1.5 if full_signal["direction"] == "LONG" else current_price - atr * 1.5,
+                    "sl": current_price - atr * 0.75 if full_signal["direction"] == "LONG" else current_price + atr * 0.75,
+                    "trade_type": "Normal" if full_signal["confidence"] >= 80 else "Scalping"
+                })
+                
+                await send_telegram_signal(symbol, full_signal)
+                log.info(f"[{full_signal['symbol']}] Telegram signal sent successfully")
+                await save_signal_to_csv(full_signal)
+                log.info(f"✅ Signal SENT ✅")
+            else:
+                log.info(f"⚠️ {symbol} - No valid full signal for {best_signal['timeframe']}")
+        else:
+            log.info(f"⚠️ {symbol} - No signal with sufficient confidence")
     else:
-        log.info(f"⚠️ {symbol} - No valid signal")
+        log.info(f"⚠️ {symbol} - No valid signals")
 
 async def scan_symbols():
     log.info(f"Scanning {SYMBOL_LIMIT} symbols across {TIMEFRAMES}")
