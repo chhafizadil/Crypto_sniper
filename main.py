@@ -103,17 +103,18 @@ async def process_symbol(symbol: str):
         cooldowns[symbol] = datetime.utcnow()
         log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
         
-        # Calculate entry, TP, and SL based on support/resistance and ATR
+        # Calculate entry, TP, and SL based on ATR and confidence
         latest_df = timeframe_data["15m"]  # Use 15m for latest price
         current_price = latest_df['close'].iloc[-1]
         atr = latest_df['atr'].iloc[-1] if 'atr' in latest_df else 0.01 * current_price
         
         signal.update({
             "entry": current_price,
-            "tp1": current_price + atr * 1.5 if signal["direction"] == "LONG" else current_price - atr * 1.5,
-            "tp2": current_price + atr * 3.0 if signal["direction"] == "LONG" else current_price - atr * 3.0,
-            "tp3": current_price + atr * 5.0 if signal["direction"] == "LONG" else current_price - atr * 5.0,
-            "sl": current_price - atr * 1.0 if signal["direction"] == "LONG" else current_price + atr * 1.0
+            "tp1": current_price + atr * 0.5 if signal["direction"] == "LONG" else current_price - atr * 0.5,
+            "tp2": current_price + atr * 1.0 if signal["direction"] == "LONG" else current_price - atr * 1.0,
+            "tp3": current_price + atr * 1.5 if signal["direction"] == "LONG" else current_price - atr * 1.5,
+            "sl": current_price - atr * 0.75 if signal["direction"] == "LONG" else current_price + atr * 0.75,
+            "trade_type": "Normal" if signal["confidence"] >= 80 else "Scalping"
         })
         
         await send_telegram_signal(symbol, signal)
