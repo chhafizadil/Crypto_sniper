@@ -3,7 +3,7 @@ import ccxt.async_support as ccxt
 import asyncio
 
 async def get_symbol_precision(symbol: str) -> int:
- Bottle try:
+    try:
         exchange = ccxt.binance()
         await exchange.load_markets()
         market = exchange.markets[symbol]
@@ -14,7 +14,6 @@ async def get_symbol_precision(symbol: str) -> int:
 def round_price(value: float, precision: int = 3) -> float:
     return round(value, precision)
 
-def format_price(value: float, symbol: str) -> str:
-    loop = asyncio.get_event_loop()
-    precision = loop.run_until_complete(get_symbol_precision(symbol))
+async def format_price(value: float, symbol: str) -> str:
+    precision = await get_symbol_precision(symbol)
     return f"{value:.{precision}f}"
