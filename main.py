@@ -5,7 +5,7 @@ import ccxt.async_support as ccxt
 from fastapi import FastAPI
 from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
-from model.predictor import SignalPredictor
+from models.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
 
@@ -28,7 +28,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000  # Minimum 24h volume in USD
-CONFIDENCE_THRESHOLD = 70.0  # For combined signal
+CONFIDENCE_THRESHOLD = 70.0  # Keep threshold tight
 COOLDOWN_PERIOD = 4 * 3600  # 4 hours in seconds
 
 # Initialize predictor
@@ -128,10 +128,10 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(4)  # Increased delay to avoid API rate limits
+            await asyncio.sleep(2)  # Delay to avoid API rate limits
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(120)  # Wait before next scan
+    await asyncio.sleep(60)  # Wait before next scan
 
 @app.on_event("startup")
 async def startup_event():
@@ -143,7 +143,7 @@ async def startup_event():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(120)  # Run every minute
+                await asyncio.sleep(60)  # Run every minute
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
                 await asyncio.sleep(300)  # Wait 5 minutes before retrying
