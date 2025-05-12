@@ -1,37 +1,42 @@
 import httpx
 import asyncio
-from datetime import datetime
-import pytz
+import pandas as pd
 from utils.logger import log
+from utils.helpers import round_price
 
 BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
 CHAT_ID = "-4694205383"
 
 async def send_telegram_signal(symbol: str, signal: dict):
     try:
-        direction = signal.get("direction", "Unknown")
+        # Format signal using round_price from utils/helpers.py
+        entry = round_price(signal.get("entry", 0))
+        tp1 = round_price(signal.get("tp1", 0))
+        tp2 = round_price(signal.get("tp2", 0))
+        tp3 = round_price(signal.get("tp3", 0))
+        sl = round_price(signal.get("sl", 0))
         confidence = signal.get("confidence", 0)
-        price = signal.get("entry", 0)
-        tp1 = signal.get("tp1", 0)
-        tp2 = signal.get("tp2", 0)
-        tp3 = signal.get("tp3", 0)
-        sl = signal.get("sl", 0)
-        tp1_possibility = signal.get("tp1_possibility", 0.7) * 100  # Convert to percentage
-        tp2_possibility = signal.get("tp2_possibility", 0.5) * 100
-        tp3_possibility = signal.get("tp3_possibility", 0.3) * 100
-        trade_type = "Scalping" if confidence < 85 else "Normal"
+        direction = signal.get("direction", "Unknown")
+        timeframe = signal.get("timeframe", "Unknown")
+        trade_type = signal.get("trade_type", "Scalping")
+        timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
+
+        # Check if TP1 and entry are the same
+        if entry == tp1:
+            log.warning(f"[{symbol}] TP1 ({tp1}) and Entry ({entry}) are the same, check ATR or rounding")
 
         message = (
             f"🚀 *{symbol} Signal*\n\n"
             f"📊 *Direction*: {direction}\n"
-            f"💰 *Entry Price*: {price:.4f}\n"
-            f"🎯 *TP1*: {tp1:.4f} ({tp1_possibility:.2f}%)\n"
-            f"🎯 *TP2*: {tp2:.4f} ({tp2_possibility:.2f}%)\n"
-            f"🎯 *TP3*: {tp3:.4f} ({tp3_possibility:.2f}%)\n"
-            f"🛑 *SL*: {sl:.4f}\n"
+            f"⏰ *Timeframe*: {timeframe}\n"
+            f"💰 *Entry Price*: {entry}\n"
+            f"🎯 *TP1*: {tp1}\n"
+            f"🎯 *TP2*: {tp2}\n"
+            f"🎯 *TP3*: {tp3}\n"
+            f"🛑 *SL*: {sl}\n"
             f"🔍 *Confidence*: {confidence:.2f}%\n"
             f"⚡ *Trade Type*: {trade_type}\n"
-            f"🕒 *Timestamp*: {datetime.now(pytz.timezone('Asia/Karachi')).strftime('%Y-%m-%d %H:%M:%S')}"
+            f"🕒 *Timestamp*: {timestamp}"
         )
 
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -45,13 +50,12 @@ async def send_telegram_signal(symbol: str, signal: dict):
                     }
                     response = await client.post(url, json=payload)
                     if response.status_code == 200:
-                        log(f"Telegram signal sent for {symbol}")
+                        log.info(f"Telegram signal sent for {symbol}")
                         return
                     else:
-                        log(f"Failed to send Telegram signal: {response.text}", level='ERROR')
+                        log.error(f"Failed to send Telegram signal: {response.text}")
                 except Exception as e:
-                    log(f"Error sending Telegram signal: {e}", level='ERROR')
+                    log.error(f"Error sending Telegram signal: {e}")
                 await asyncio.sleep(2)
-
     except Exception as e:
-        log(f"Error in send_telegram_signal: {e}", level='ERROR')
+        log.error(f"Error in send_telegram_signal: {e}")
