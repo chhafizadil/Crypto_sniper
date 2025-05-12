@@ -1,39 +1,36 @@
 import logging
 import pandas as pd
+import numpy as np
 from typing import Optional, Dict
 from sklearn.ensemble import RandomForestClassifier
-import numpy as np
 import joblib
-import os
 
 class RandomForestPredictor:
     def __init__(self):
+        # Load pre-trained model
+        self.model = joblib.load('models/rf_model.joblib')
         self.log = logging.getLogger("crypto-signal-bot")
-        model_path = "models/rf_model.joblib"
-        if os.path.exists(model_path):
-            self.model = joblib.load(model_path)
-            self.log.info("Loaded pre-trained RandomForest model from models/rf_model.joblib")
-        else:
-            self.log.warning("rf_model.joblib not found. Initializing untrained model.")
-            self.model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
-                random_state=42
-            )
-            self.log.info("RandomForestPredictor initialized with untrained model")
+        self.log.info("RandomForestPredictor initialized with pre-trained model")
 
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
         try:
-            # Prepare features
+            # Prepare 15 features to match the pre-trained model
             features = [
-                df['rsi'].iloc[-1],
-                df['macd'].iloc[-1],
-                df['macd_signal'].iloc[-1],
-                df['bb_upper'].iloc[-1],
-                df['bb_lower'].iloc[-1],
-                df['atr'].iloc[-1],
-                df['volume'].iloc[-1],
-                df['volume_sma_20'].iloc[-1]
+                df['rsi'].iloc[-1],              # 1: RSI
+                df['macd'].iloc[-1],             # 2: MACD
+                df['macd_signal'].iloc[-1],      # 3: MACD Signal
+                df['bb_upper'].iloc[-1],         # 4: Bollinger Band Upper
+                df['bb_lower'].iloc[-1],         # 5: Bollinger Band Lower
+                df['atr'].iloc[-1],              # 6: ATR
+                df['volume'].iloc[-1],           # 7: Volume
+                df['volume_sma_20'].iloc[-1],    # 8: Volume SMA 20
+                df['ema_20'].iloc[-1],           # 9: EMA 20
+                df['ema_50'].iloc[-1],           # 10: EMA 50
+                df['stoch_rsi'].iloc[-1],        # 11: Stochastic RSI
+                df['adx'].iloc[-1],              # 12: ADX
+                df['cci'].iloc[-1],              # 13: CCI
+                df['vwap'].iloc[-1],             # 14: VWAP
+                df['momentum'].iloc[-1]          # 15: Momentum
             ]
 
             # Ensure features are valid
@@ -41,9 +38,16 @@ class RandomForestPredictor:
                 self.log.error(f"[{symbol}] Invalid features for {timeframe}: {features}")
                 return None
 
+            # Convert features to DataFrame with correct feature names
+            feature_names = [
+                'rsi', 'macd', 'macd_signal', 'bb_upper', 'bb_lower', 'atr', 'volume',
+                'volume_sma_20', 'ema_20', 'ema_50', 'stoch_rsi', 'adx', 'cci', 'vwap', 'momentum'
+            ]
+            X = pd.DataFrame([features], columns=feature_names)
+
             # Predict
-            prediction = self.model.predict([features])[0]
-            confidence = self.model.predict_proba([features])[0][prediction] * 100
+            prediction = self.model.predict(X)[0]
+            confidence = self.model.predict_proba(X)[0][prediction] * 100
 
             # Determine direction
             direction = "LONG" if prediction == 1 else "SHORT"
