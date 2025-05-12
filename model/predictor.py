@@ -1,95 +1,31 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-import joblib
-import os
 from core.candle_patterns import (
     is_bullish_engulfing, is_bearish_engulfing, is_doji, is_hammer, is_shooting_star,
     is_three_white_soldiers, is_three_black_crows
 )
 from utils.logger import log
 import pytz
-import gc
 
 class SignalPredictor:
-    def __init__(self, model_path="models/rf_model.joblib"):
-        self.model = None
-        self.features = [
-            "rsi", "macd", "macd_signal", "bb_upper", "bb_lower", "atr", "volume", "volume_sma_20",
-            "bullish_engulfing", "bearish_engulfing", "doji", "hammer", "shooting_star",
-            "three_white_soldiers", "three_black_crows"
-        ]
+    def __init__(self):
         self.min_confidence_threshold = 0.65
-        self.last_signals = {}
-        
-        try:
-            if os.path.exists(model_path):
-                self.model = joblib.load(model_path)
-                log("Random Forest model loaded successfully")
-                if hasattr(self.model, 'feature_names_in_'):
-                    expected_features = list(self.model.feature_names_in_)
-                    if expected_features != self.features:
-                        log(f"Feature order mismatch! Model expects: {expected_features}", level="WARNING")
-                        self.features = expected_features
-                        log(f"Updated feature list to: {self.features}")
-            else:
-                log(f"Model file not found at {model_path}", level="ERROR")
-                raise FileNotFoundError(f"Model file {model_path} not found")
-        except Exception as e:
-            log(f"Error loading model: {str(e)}", level="ERROR")
-            raise
-
-    def prepare_features(self, df: pd.DataFrame):
-        try:
-            if df.empty or len(df) < 2:
-                log("Input DataFrame is empty or too small for feature preparation", level="ERROR")
-                return None
-
-            feature_df = pd.DataFrame(index=df.index, dtype="float32")
-            
-            for feature in ["rsi", "macd", "macd_signal", "atr", "volume", "bb_lower", "bb_upper", "volume_sma_20"]:
-                if feature in df.columns:
-                    feature_df[feature] = pd.Series(df[feature].values, index=df.index, dtype="float32").fillna(0.0)
-                else:
-                    log(f"Feature {feature} not found in DataFrame", level="WARNING")
-                    feature_df[feature] = pd.Series(0.0, index=df.index, dtype="float32")
-            
-            candle_patterns = {
-                "bullish_engulfing": is_bullish_engulfing,
-                "bearish_engulfing": is_bearish_engulfing,
-                "doji": is_doji,
-                "hammer": is_hammer,
-                "shooting_star": is_shooting_star,
-                "three_white_soldiers": is_three_white_soldiers,
-                "three_black_crows": is_three_black_crows
-            }
-            for name, func in candle_patterns.items():
-                try:
-                    result = func(df)
-                    if not isinstance(result, pd.Series):
-                        result = pd.Series(result, index=df.index, dtype="float32")
-                    feature_df[name] = result.fillna(0.0).astype("float32")
-                except Exception as e:
-                    log(f"Error calculating {name}: {e}", level="WARNING")
-                    feature_df[name] = pd.Series(0.0, index=df.index, dtype="float32")
-            
-            for feature in self.features:
-                if feature not in feature_df.columns:
-                    feature_df[feature] = pd.Series(0.0, index=df.index, dtype="float32")
-            
-            feature_df = feature_df[self.features].fillna(0.0)
-            
-            if feature_df.isna().any().any():
-                log("NaN values detected after filling in features", level="WARNING")
-                return None
-                
-            log(f"Features prepared: {feature_df.iloc[-1].to_dict()}")
-            return feature_df
-        except Exception as e:
-            log(f"Error preparing features: {str(e)}", level="ERROR")
-            return None
-        finally:
-            gc.collect()
+        self.last_signals = {}  # {symbol_timeframe: timestamp}
+        self.candle_patterns = {
+            "bullish_engulfing": is_bullish_engulfing,
+            "bearish_engulfing": is_bearish_engulfing,
+            "doji": is_doji,
+            "hammer": is_hammer,
+            "shooting_star": is_shooting_star,
+            "three_white_soldiers": is_three_white_soldiers,
+            "three_black_crows": is_three_black_crows
+        }
+        self.indicators = [
+            "rsi", "macd", "macd_signal", "atr", "volume", "volume_sma_20",
+            "bb_upper", "bb_lower", "ema_20", "ema_50", "stoch_rsi", "adx",
+            "cci", "vwap", "momentum"
+        ]
+        log("Signal Predictor initialized with 15 indicators and candle patterns")
 
     async def calculate_take_profits(self, df: pd.DataFrame, direction: str, current_price: float):
         try:
@@ -117,51 +53,106 @@ class SignalPredictor:
         except Exception as e:
             log(f"Error calculating TP/SL: {str(e)}", level="ERROR")
             return None, None, None, None
-        finally:
-            gc.collect()
 
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str = "15m"):
         try:
-            if self.model is None:
-                log("Model not loaded", level="ERROR")
-                return None
-                
             signal_key = f"{symbol}_{timeframe}"
             last_signal_time = self.last_signals.get(signal_key)
             if last_signal_time and (pd.Timestamp.now() - last_signal_time).total_seconds() < 3600:
                 log(f"[{symbol}] Skipping duplicate signal within 1 hour", level="INFO")
                 return None
-                
-            features = self.prepare_features(df)
-            if features is None or len(features) == 0:
-                log(f"[{symbol}] No valid features for prediction", level="WARNING")
+
+            # Check if all required indicators are present
+            missing_indicators = [ind for ind in self.indicators if ind not in df.columns]
+            if missing_indicators:
+                log(f"[{symbol}] Missing indicators: {missing_indicators}", level="WARNING")
                 return None
-                
-            current_features = features.iloc[-1:].reindex(columns=self.features)
-            prediction_proba = self.model.predict_proba(current_features)[0]
-            prediction = self.model.predict(current_features)[0]
-            
-            direction = "LONG" if prediction == 1 else "SHORT"
-            confidence = min(max(prediction_proba.max() * 100, 0), 100)  # Fixed confidence calculation
-            
-            if confidence < self.min_confidence_threshold * 100:
-                log(f"[{symbol}] Low confidence: {confidence:.2f}%", level="INFO")
+
+            # Calculate candle patterns
+            pattern_results = {}
+            for name, func in self.candle_patterns.items():
+                try:
+                    result = func(df)
+                    pattern_results[name] = result.iloc[-1] if isinstance(result, pd.Series) else result
+                except Exception as e:
+                    log(f"Error calculating {name}: {e}", level="WARNING")
+                    pattern_results[name] = 0.0
+
+            # Initialize signal parameters
+            direction = None
+            confidence = 0.0
+
+            # Bullish signals
+            if pattern_results["bullish_engulfing"] or pattern_results["hammer"] or pattern_results["three_white_soldiers"]:
+                direction = "LONG"
+                confidence = 0.65  # Base confidence for bullish patterns
+                # Adjust confidence based on indicators
+                if df["rsi"].iloc[-1] < 30:  # Oversold RSI
+                    confidence += 0.05
+                if df["macd"].iloc[-1] > df["macd_signal"].iloc[-1]:  # MACD bullish crossover
+                    confidence += 0.05
+                if df["close"].iloc[-1] > df["vwap"].iloc[-1]:  # Price above VWAP
+                    confidence += 0.03
+                if df["stoch_rsi"].iloc[-1] < 20:  # Oversold Stochastic RSI
+                    confidence += 0.03
+                if df["adx"].iloc[-1] > 25:  # Strong trend
+                    confidence += 0.03
+                if df["cci"].iloc[-1] > 100:  # Bullish CCI
+                    confidence += 0.03
+                if df["ema_20"].iloc[-1] > df["ema_50"].iloc[-1]:  # Bullish EMA crossover
+                    confidence += 0.03
+                if df["momentum"].iloc[-1] > 0:  # Positive momentum
+                    confidence += 0.03
+                if df["close"].iloc[-1] > df["bb_upper"].iloc[-1]:  # Breakout above Bollinger Band
+                    confidence += 0.03
+
+            # Bearish signals
+            elif pattern_results["bearish_engulfing"] or pattern_results["shooting_star"] or pattern_results["three_black_crows"]:
+                direction = "SHORT"
+                confidence = 0.65  # Base confidence for bearish patterns
+                # Adjust confidence based on indicators
+                if df["rsi"].iloc[-1] > 70:  # Overbought RSI
+                    confidence += 0.05
+                if df["macd"].iloc[-1] < df["macd_signal"].iloc[-1]:  # MACD bearish crossover
+                    confidence += 0.05
+                if df["close"].iloc[-1] < df["vwap"].iloc[-1]:  # Price below VWAP
+                    confidence += 0.03
+                if df["stoch_rsi"].iloc[-1] > 80:  # Overbought Stochastic RSI
+                    confidence += 0.03
+                if df["adx"].iloc[-1] > 25:  # Strong trend
+                    confidence += 0.03
+                if df["cci"].iloc[-1] < -100:  # Bearish CCI
+                    confidence += 0.03
+                if df["ema_20"].iloc[-1] < df["ema_50"].iloc[-1]:  # Bearish EMA crossover
+                    confidence += 0.03
+                if df["momentum"].iloc[-1] < 0:  # Negative momentum
+                    confidence += 0.03
+                if df["close"].iloc[-1] < df["bb_lower"].iloc[-1]:  # Breakout below Bollinger Band
+                    confidence += 0.03
+
+            # Adjust confidence based on volume
+            if df["volume"].iloc[-1] > df["volume_sma_20"].iloc[-1]:
+                confidence += 0.05
+
+            confidence = min(confidence, 0.95)  # Cap confidence at 95%
+
+            if direction is None or confidence < self.min_confidence_threshold:
+                log(f"[{symbol}] No valid signal or low confidence: {confidence*100:.2f}%", level="INFO")
                 return None
-                
+
             current_price = df["close"].iloc[-1]
-            
             tp1, tp2, tp3, sl = await self.calculate_take_profits(df, direction, current_price)
             if any(x is None for x in [tp1, tp2, tp3, sl]):
                 log(f"[{symbol}] Invalid TP/SL values", level="WARNING")
                 return None
-                
-            # Dynamic TP hit rates based on confidence and ATR
+
+            # Dynamic TP hit rates
             atr = df["atr"].iloc[-1]
-            atr_factor = min(atr / current_price, 1.0)  # Normalize ATR relative to price
-            tp1_hit_rate = min(0.75 + (confidence / 100 - 0.65) * 0.15 - atr_factor * 0.1, 0.90)
-            tp2_hit_rate = min(0.50 + (confidence / 100 - 0.65) * 0.20 - atr_factor * 0.15, 0.75)
-            tp3_hit_rate = min(0.25 + (confidence / 100 - 0.65) * 0.25 - atr_factor * 0.2, 0.60)
-            
+            atr_factor = min(atr / current_price, 1.0)
+            tp1_hit_rate = min(0.75 + (confidence - 0.65) * 0.15 - atr_factor * 0.1, 0.90)
+            tp2_hit_rate = min(0.50 + (confidence - 0.65) * 0.20 - atr_factor * 0.15, 0.75)
+            tp3_hit_rate = min(0.25 + (confidence - 0.65) * 0.25 - atr_factor * 0.2, 0.60)
+
             signal = {
                 "symbol": symbol,
                 "direction": direction,
@@ -170,22 +161,17 @@ class SignalPredictor:
                 "tp2": round(tp2, 4),
                 "tp3": round(tp3, 4),
                 "sl": round(sl, 4),
-                "confidence": confidence,
+                "confidence": confidence * 100,
                 "tp1_possibility": round(tp1_hit_rate, 2),
                 "tp2_possibility": round(tp2_hit_rate, 2),
                 "tp3_possibility": round(tp3_hit_rate, 2),
                 "timeframe": timeframe,
                 "timestamp": pd.Timestamp.now(tz=pytz.timezone("Asia/Karachi")).isoformat()
             }
-            
+
             self.last_signals[signal_key] = pd.Timestamp.now()
-            
-            log(f"[{symbol}] Signal generated - Direction: {direction}, Confidence: {confidence:.2f}%, TP1: {tp1_hit_rate:.2f}, TP2: {tp2_hit_rate:.2f}, TP3: {tp3_hit_rate:.2f}")
+            log(f"[{symbol}] Signal generated - Direction: {direction}, Confidence: {confidence*100:.2f}%")
             return signal
         except Exception as e:
             log(f"[{symbol}] Error predicting signal: {str(e)}", level="ERROR")
             return None
-        finally:
-            if 'features' in locals():
-                del features
-            gc.collect()
