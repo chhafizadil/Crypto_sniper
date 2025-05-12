@@ -3,16 +3,24 @@ import pandas as pd
 from typing import Optional, Dict
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
+import joblib
+import os
 
 class RandomForestPredictor:
     def __init__(self):
-        self.model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
-            random_state=42
-        )
         self.log = logging.getLogger("crypto-signal-bot")
-        self.log.info("RandomForestPredictor initialized")
+        model_path = "models/rf_model.joblib"
+        if os.path.exists(model_path):
+            self.model = joblib.load(model_path)
+            self.log.info("Loaded pre-trained RandomForest model from models/rf_model.joblib")
+        else:
+            self.log.warning("rf_model.joblib not found. Initializing untrained model.")
+            self.model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42
+            )
+            self.log.info("RandomForestPredictor initialized with untrained model")
 
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
         try:
