@@ -141,34 +141,10 @@ async def analyze_symbol_multi_timeframe(
                 log.warning(f"[{symbol}] Insufficient data for {timeframe}")
                 continue
 
-            # Prepare features for predictor
-            features = {
-                'rsi': df['rsi'].iloc[-1],
-                'macd': df['macd'].iloc[-1],
-                'macd_signal': df['macd_signal'].iloc[-1],
-                'atr': df['atr'].iloc[-1],
-                'volume': df['volume'].iloc[-1],
-                'volume_sma_20': df['volume_sma_20'].iloc[-1],
-                'bb_upper': df['bb_upper'].iloc[-1],
-                'bb_lower': df['bb_lower'].iloc[-1],
-                'ema_20': df['ema_20'].iloc[-1],
-                'ema_50': df['ema_50'].iloc[-1],
-                'stoch_rsi': df['stoch_rsi'].iloc[-1],
-                'adx': df['adx'].iloc[-1],
-                'cci': df['cci'].iloc[-1],
-                'vwap': df['vwap'].iloc[-1],
-                'momentum': df['momentum'].iloc[-1]
-            }
-            log.info(f"[{symbol}] Features prepared: {features}")
-
-            # Get prediction
+            # Get full signal
             signal = await predictor.predict_signal(symbol, df, timeframe)
             if signal:
-                signals.append({
-                    'timeframe': timeframe,
-                    'direction': signal['direction'],
-                    'confidence': signal['confidence']
-                })
+                signals.append(signal)
                 log.info(f"[{symbol}] Signal for {timeframe}: {signal['direction']}, Confidence: {signal['confidence']:.2f}%")
             else:
                 log.info(f"[{symbol}] No signal for {timeframe}")
