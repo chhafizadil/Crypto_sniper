@@ -1,3 +1,4 @@
+# main.py
 import asyncio
 import logging
 import pandas as pd
@@ -33,7 +34,7 @@ log.info("Signal Predictor initialized successfully")
 
 cooldowns = {}
 
-async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 50) -> pd.DataFrame:
+async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
     try:
         ohlcv = await EXCHANGE.fetch_ohlcv(symbol, timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -115,10 +116,10 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(300)
+    await asyncio.sleep(600)
 
 @app.on_event("startup")
 async def startup_event():
@@ -130,13 +131,13 @@ async def startup_event():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(300)
+                await asyncio.sleep(600)
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
-                await asyncio.sleep(600)
+                await asyncio.sleep(900)
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
-        await asyncio.sleep(600)
+        await asyncio.sleep(900)
 
 @app.on_event("shutdown")
 async def shutdown_event():
