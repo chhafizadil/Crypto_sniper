@@ -28,7 +28,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000  # Minimum 24h volume in USD
-CONFIDENCE_THRESHOLD = 60.0  # For combined signal
+CONFIDENCE_THRESHOLD = 70.0  # For combined signal
 COOLDOWN_PERIOD = 4 * 3600  # 4 hours in seconds
 
 # Initialize predictor
