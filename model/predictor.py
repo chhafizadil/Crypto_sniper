@@ -215,7 +215,7 @@ class SignalPredictor:
 
             confidence = min(max(confidence, 0), 100)
 
-            if confidence >= 60:
+            if confidence >= 70:
                 precision = await self.get_symbol_precision(symbol)
                 atr = latest['atr']
                 current_price = latest['close']
