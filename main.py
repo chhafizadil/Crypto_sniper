@@ -9,7 +9,6 @@ from model.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
@@ -20,23 +19,19 @@ logging.basicConfig(
 )
 log = logging.getLogger("crypto-signal-bot")
 
-# FastAPI app
 app = FastAPI()
 
-# Configuration
 EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
-MIN_VOLUME = 1000000  # Minimum 24h volume in USD
-CONFIDENCE_THRESHOLD = 70.0  # Keep threshold tight
-COOLDOWN_PERIOD = 4 * 3600  # 4 hours in seconds
+MIN_VOLUME = 1000000
+CONFIDENCE_THRESHOLD = 60.0
+COOLDOWN_PERIOD = 4 * 3600
 
-# Initialize predictor
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
 
-# Cooldown tracking
-cooldowns = {}  # {symbol: timestamp}
+cooldowns = {}
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 50) -> pd.DataFrame:
     try:
@@ -73,7 +68,6 @@ async def save_signal_to_csv(signal: Dict):
 async def process_symbol(symbol: str):
     log.info(f"[{symbol}] Checking for cooldown")
     
-    # Check if symbol is in cooldown
     if symbol in cooldowns:
         cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
         if datetime.utcnow() < cooldown_end:
@@ -82,7 +76,6 @@ async def process_symbol(symbol: str):
     
     log.info(f"[{symbol}] Starting multi-timeframe analysis")
     
-    # Fetch data for all timeframes
     timeframe_data = {}
     for timeframe in TIMEFRAMES:
         df = await fetch_ohlcv(symbol, timeframe)
@@ -95,21 +88,15 @@ async def process_symbol(symbol: str):
         log.warning(f"[{symbol}] No data available for any timeframe")
         return
     
-    # Analyze across all timeframes
     result = await analyze_symbol_multi_timeframe(EXCHANGE, symbol, TIMEFRAMES, predictor)
     
     if result and 'signals' in result and result['signals']:
-        # Select the signal with the highest confidence
         best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
         if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
-            # Add to cooldown
             cooldowns[symbol] = datetime.utcnow()
             log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
             
-            # Update trade type
             best_signal['trade_type'] = "Normal" if best_signal['confidence'] >= 80 else "Scalping"
-            
-            # Ensure timestamp is included
             best_signal['timestamp'] = pd.Timestamp.now()
             
             await send_telegram_signal(symbol, best_signal)
@@ -128,10 +115,10 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(2)  # Delay to avoid API rate limits
+            await asyncio.sleep(5)
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(60)  # Wait before next scan
+    await asyncio.sleep(300)
 
 @app.on_event("startup")
 async def startup_event():
@@ -143,13 +130,13 @@ async def startup_event():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(60)  # Run every minute
+                await asyncio.sleep(300)
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
-                await asyncio.sleep(300)  # Wait 5 minutes before retrying
+                await asyncio.sleep(600)
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
-        await asyncio.sleep(300)  # Wait 5 minutes before retrying
+        await asyncio.sleep(600)
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -163,7 +150,6 @@ async def shutdown_event():
 @app.get("/health")
 async def health_check():
     try:
-        # Lightweight check to ensure bot is responsive
         return {"status": "healthy", "timestamp": str(datetime.utcnow())}
     except Exception as e:
         log.error(f"Health check failed: {str(e)}")
