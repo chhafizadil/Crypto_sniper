@@ -5,7 +5,7 @@ import ccxt.async_support as ccxt
 from fastapi import FastAPI
 from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
-from models.predictor import SignalPredictor
+from model.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
 
