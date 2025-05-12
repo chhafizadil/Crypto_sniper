@@ -102,38 +102,20 @@ async def process_symbol(symbol: str):
         # Select the signal with the highest confidence
         best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
         if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
-            # Fetch the full signal details for the best timeframe
-            df = timeframe_data.get(best_signal['timeframe'])
-            if df is None:
-                log.warning(f"[{symbol}] No data for timeframe {best_signal['timeframe']}")
-                return
-                
-            full_signal = await predictor.predict_signal(symbol, df, best_signal['timeframe'])
-            if full_signal:
-                # Add to cooldown
-                cooldowns[symbol] = datetime.utcnow()
-                log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
-                
-                # Calculate entry, TP, and SL based on ATR and confidence
-                latest_df = timeframe_data["15m"]  # Use 15m for latest price
-                current_price = latest_df['close'].iloc[-1]
-                atr = latest_df['atr'].iloc[-1] if 'atr' in latest_df else 0.01 * current_price
-                
-                full_signal.update({
-                    "entry": current_price,
-                    "tp1": current_price + atr * 0.5 if full_signal["direction"] == "LONG" else current_price - atr * 0.5,
-                    "tp2": current_price + atr * 1.0 if full_signal["direction"] == "LONG" else current_price - atr * 1.0,
-                    "tp3": current_price + atr * 1.5 if full_signal["direction"] == "LONG" else current_price - atr * 1.5,
-                    "sl": current_price - atr * 0.75 if full_signal["direction"] == "LONG" else current_price + atr * 0.75,
-                    "trade_type": "Normal" if full_signal["confidence"] >= 80 else "Scalping"
-                })
-                
-                await send_telegram_signal(symbol, full_signal)
-                log.info(f"[{full_signal['symbol']}] Telegram signal sent successfully")
-                await save_signal_to_csv(full_signal)
-                log.info(f"✅ Signal SENT ✅")
-            else:
-                log.info(f"⚠️ {symbol} - No valid full signal for {best_signal['timeframe']}")
+            # Add to cooldown
+            cooldowns[symbol] = datetime.utcnow()
+            log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
+            
+            # Update trade type
+            best_signal['trade_type'] = "Normal" if best_signal['confidence'] >= 80 else "Scalping"
+            
+            # Ensure timestamp is included
+            best_signal['timestamp'] = pd.Timestamp.now()
+            
+            await send_telegram_signal(symbol, best_signal)
+            log.info(f"[{best_signal['symbol']}] Telegram signal sent successfully")
+            await save_signal_to_csv(best_signal)
+            log.info(f"✅ Signal SENT ✅")
         else:
             log.info(f"⚠️ {symbol} - No signal with sufficient confidence")
     else:
@@ -144,8 +126,11 @@ async def scan_symbols():
     symbols = await get_high_volume_symbols()
     
     for symbol in symbols:
-        await process_symbol(symbol)
-        await asyncio.sleep(0.5)  # Prevent API rate limit issues
+        try:
+            await process_symbol(symbol)
+            await asyncio.sleep(1)  # Increased delay to avoid API rate limits
+        except Exception as e:
+            log.error(f"Error processing {symbol}: {str(e)}")
     await asyncio.sleep(60)  # Wait before next scan
 
 @app.on_event("startup")
@@ -155,17 +140,25 @@ async def startup_event():
         await EXCHANGE.load_markets()
         log.info("Binance API connection successful")
         while True:
-            await scan_symbols()
-            log.info("Scan complete, waiting for next cycle...")
-            await asyncio.sleep(60)  # Run every minute
+            try:
+                await scan_symbols()
+                log.info("Scan complete, waiting for next cycle...")
+                await asyncio.sleep(60)  # Run every minute
+            except Exception as e:
+                log.error(f"Error in scan cycle: {str(e)}")
+                await asyncio.sleep(300)  # Wait 5 minutes before retrying
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
+        await asyncio.sleep(300)  # Wait 5 minutes before retrying
 
 @app.on_event("shutdown")
 async def shutdown_event():
     log.info("Shutting down")
-    await EXCHANGE.close()
-    log.info("Binance connection closed successfully")
+    try:
+        await EXCHANGE.close()
+        log.info("Binance connection closed successfully")
+    except Exception as e:
+        log.error(f"Error closing Binance connection: {str(e)}")
 
 @app.get("/health")
 async def health_check():
