@@ -249,6 +249,17 @@ class SignalPredictor:
             conditions = []
 
             logger.info(f"[{symbol}] Checking LONG conditions for {timeframe}")
+            # LONG conditions with debug logging
+            logger.debug(f"[{symbol}] RSI: {latest['rsi'] if pd.notna(latest['rsi']) else 'NaN'}")
+            logger.debug(f"[{symbol}] MACD: {latest['macd'] if pd.notna(latest['macd']) else 'NaN'}, Signal: {latest['macd_signal'] if pd.notna(latest['macd_signal']) else 'NaN'}")
+            logger.debug(f"[{symbol}] EMA_20: {latest['ema_20'] if pd.notna(latest['ema_20']) else 'NaN'}, EMA_50: {latest['ema_50'] if pd.notna(latest['ema_50']) else 'NaN'}")
+            logger.debug(f"[{symbol}] Stoch_RSI: {latest['stoch_rsi'] if pd.notna(latest['stoch_rsi']) else 'NaN'}")
+            logger.debug(f"[{symbol}] ADX: {latest['adx'] if pd.notna(latest['adx']) else 'NaN'}")
+            logger.debug(f"[{symbol}] CCI: {latest['cci'] if pd.notna(latest['cci']) else 'NaN'}")
+            logger.debug(f"[{symbol}] Momentum: {latest['momentum'] if pd.notna(latest['momentum']) else 'NaN'}")
+            logger.debug(f"[{symbol}] Volume: {latest['volume'] if pd.notna(latest['volume']) else 'NaN'}, Volume_SMA_20: {latest['volume_sma_20'] if pd.notna(latest['volume_sma_20']) else 'NaN'}")
+            logger.debug(f"[{symbol}] OBV: {latest['obv'] if pd.notna(latest['obv']) else 'NaN'}, Prev_OBV: {df['obv'].shift(1).iloc[-1] if pd.notna(df['obv'].shift(1).iloc[-1]) else 'NaN'}")
+
             long_conditions_met = (
                 pd.notna(latest['rsi']) and latest['rsi'] < 35 and 
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal'] and 
@@ -257,13 +268,13 @@ class SignalPredictor:
                 pd.notna(latest['adx']) and latest['adx'] > 30 and 
                 pd.notna(latest['cci']) and latest['cci'] > 120 and 
                 pd.notna(latest['momentum']) and latest['momentum'] > 0 and
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2
-                # OBV check removed
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2 and
+                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1
             )
             if long_conditions_met:
                 direction = "LONG"
                 confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume")
+                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume, rising OBV")
                 if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
@@ -275,6 +286,16 @@ class SignalPredictor:
                     conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
             logger.info(f"[{symbol}] Checking SHORT conditions for {timeframe}")
+            logger.debug(f"[{symbol}] RSI: {latest['rsi'] if pd.notna(latest['rsi']) else 'NaN'}")
+            logger.debug(f"[{symbol}] MACD: {latest['macd'] if pd.notna(latest['macd']) else 'NaN'}, Signal: {latest['macd_signal'] if pd.notna(latest['macd_signal']) else 'NaN'}")
+            logger.debug(f"[{symbol}] EMA_20: {latest['ema_20'] if pd.notna(latest['ema_20']) else 'NaN'}, EMA_50: {latest['ema_50'] if pd.notna(latest['ema_50']) else 'NaN'}")
+            logger.debug(f"[{symbol}] Stoch_RSI: {latest['stoch_rsi'] if pd.notna(latest['stoch_rsi']) else 'NaN'}")
+            logger.debug(f"[{symbol}] ADX: {latest['adx'] if pd.notna(latest['adx']) else 'NaN'}")
+            logger.debug(f"[{symbol}] CCI: {latest['cci'] if pd.notna(latest['cci']) else 'NaN'}")
+            logger.debug(f"[{symbol}] Momentum: {latest['momentum'] if pd.notna(latest['momentum']) else 'NaN'}")
+            logger.debug(f"[{symbol}] Volume: {latest['volume'] if pd.notna(latest['volume']) else 'NaN'}, Volume_SMA_20: {latest['volume_sma_20'] if pd.notna(latest['volume_sma_20']) else 'NaN'}")
+            logger.debug(f"[{symbol}] OBV: {latest['obv'] if pd.notna(latest['obv']) else 'NaN'}, Prev_OBV: {df['obv'].shift(1).iloc[-1] if pd.notna(df['obv'].shift(1).iloc[-1]) else 'NaN'}")
+
             short_conditions_met = (
                 pd.notna(latest['rsi']) and latest['rsi'] > 65 and 
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'] and 
@@ -283,13 +304,13 @@ class SignalPredictor:
                 pd.notna(latest['adx']) and latest['adx'] > 30 and 
                 pd.notna(latest['cci']) and latest['cci'] < -120 and 
                 pd.notna(latest['momentum']) and latest['momentum'] < 0 and
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9
-                # OBV check removed
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9 and
+                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9
             )
             if short_conditions_met:
                 direction = "SHORT"
                 confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume")
+                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume, falling OBV")
                 if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
