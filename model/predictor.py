@@ -61,7 +61,7 @@ class SignalPredictor:
         true_range = ranges.max(axis=1)
         return true_range.rolling(window=period).mean()
 
-    def _calculate_bollinger_bands(self, series: pd.Series, period: int = 20) -> tuple:
+    def _calculate_bollinger_bands(self, series: pd.DataFrame, period: int = 20) -> tuple:
         sma = series.rolling(window=period).mean()
         std = series.rolling(window=period).std()
         upper_band = sma + (std * 2)
@@ -185,10 +185,11 @@ class SignalPredictor:
             # LONG condition
             if (latest['rsi'] < 35 and latest['macd'] > latest['macd_signal'] and latest['ema_20'] > latest['ema_50'] and
                 latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0 and
-                latest['volume'] > latest['volume_sma_20'] * 1.2):
+                latest['volume'] > latest['volume_sma_20'] * 1.2 and
+                latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1):
                 direction = "LONG"
                 confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume")
+                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume, rising OBV")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
@@ -202,10 +203,11 @@ class SignalPredictor:
             # SHORT condition
             elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
                   latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0 and
-                  latest['volume'] < latest['volume_sma_20'] * 0.8):
+                  latest['volume'] < latest['volume_sma_20'] * 0.8 and
+                  latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9):
                 direction = "SHORT"
                 confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume")
+                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume, falling OBV")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
