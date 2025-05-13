@@ -1,4 +1,3 @@
-# model/predictor.py
 import pandas as pd
 import numpy as np
 import logging
@@ -18,16 +17,6 @@ class SignalPredictor:
         self.previous_signals = {}
         self.exchange = ccxt.binance()
         logger.info("Signal Predictor initialized with %d indicators and candle patterns", len(self.indicators))
-
-    async def get_symbol_precision(self, symbol: str) -> int:
-        try:
-            await self.exchange.load_markets()
-            market = self.exchange.markets[symbol]
-            precision = market['precision']['price']
-            return precision
-        except Exception as e:
-            logger.error(f"[{symbol}] Error fetching precision: {str(e)}")
-            return 3
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
@@ -159,6 +148,16 @@ class SignalPredictor:
             logger.error("Error detecting candle patterns: %s", str(e))
             return []
 
+    async def get_symbol_precision(self, symbol: str) -> int:
+        try:
+            await self.exchange.load_markets()
+            market = self.exchange.markets[symbol]
+            precision = market['precision']['price']
+            return precision
+        except Exception as e:
+            logger.error(f"[{symbol}] Error fetching precision: {str(e)}")
+            return 3
+
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
         try:
             if symbol in self.previous_signals and timeframe in self.previous_signals[symbol]:
@@ -172,41 +171,46 @@ class SignalPredictor:
                 logger.warning("[%s] Insufficient data for %s", symbol, timeframe)
                 return None
 
-            patterns = await self.detect_candle_patterns(df)
+            # Volatility check
             latest = df.iloc[-1]
+            if latest['atr'] > df['atr'].rolling(window=20).mean() * 1.5:
+                logger.info(f"[{symbol}] High volatility for {timeframe}, skipping signal")
+                return None
+
+            patterns = await self.detect_candle_patterns(df)
             confidence = 0.0
             direction = None
             conditions = []
 
             if (latest['rsi'] < 35 and latest['macd'] > latest['macd_signal'] and latest['ema_20'] > latest['ema_50'] and
                 latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0 and
-                latest['obv'] > df['obv'].shift(1)):
+                latest['obv'] > df['obv'].shift(1) * 1.1):  # Changed: 10% OBV growth
                 direction = "LONG"
                 confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, rising OBV")
+                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, strong OBV growth")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
                 if latest['close'] > latest['vwap']:
                     confidence += 10
                     conditions.append("Price above VWAP")
-                if any(p in patterns for p in ["engulfing", "harami", "morning_star"]):
+                if any(p in patterns for p in ["engulfing", "morning_star"]):  # Changed: Strict patterns
                     confidence += 10
                     conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
             elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
                   latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0 and
-                  latest['obv'] < df['obv'].shift(1)):
+                  latest['obv'] < df['obv'].shift(1) * 0.9):  # Changed: 10% OBV drop
                 direction = "SHORT"
                 confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, falling OBV")
+                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, strong OBV drop")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
                 if latest['close'] < latest['vwap']:
                     confidence += 10
                     conditions.append("Price below VWAP")
-                if any(p in patterns for p in ["engulfing", "harami", "evening_star"]):
+                if any(p in patterns for p in ["engulfing", "evening_star"]):  # Changed: Strict patterns
                     confidence += 10
                     conditions.append(f"Bearish pattern: {patterns[-1] if patterns else 'none'}")
 
@@ -215,7 +219,7 @@ class SignalPredictor:
 
             confidence = min(max(confidence, 0), 100)
 
-            if confidence >= 70:
+            if confidence >= 80:  # Changed from 70
                 precision = await self.get_symbol_precision(symbol)
                 atr = latest['atr']
                 current_price = latest['close']
