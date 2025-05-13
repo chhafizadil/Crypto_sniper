@@ -1,3 +1,4 @@
+```python
 import pandas as pd
 import numpy as np
 import logging
@@ -185,10 +186,10 @@ class SignalPredictor:
             # LONG condition
             if (latest['rsi'] < 35 and latest['macd'] > latest['macd_signal'] and latest['ema_20'] > latest['ema_50'] and
                 latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0 and
-                latest['obv'] > (df['obv'].shift(1).iloc[-1] * 1.1 if not pd.isna(df['obv'].shift(1).iloc[-1]) else float('inf'))):
+                latest['volume'] > latest['volume_sma_20'] * 1.2):
                 direction = "LONG"
                 confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, strong OBV growth")
+                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
@@ -202,10 +203,10 @@ class SignalPredictor:
             # SHORT condition
             elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
                   latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0 and
-                  latest['obv'] < (df['obv'].shift(1).iloc[-1] * 0.9 if not pd.isna(df['obv'].shift(1).iloc[-1]) else float('-inf'))):
+                  latest['volume'] < latest['volume_sma_20'] * 0.8):
                 direction = "SHORT"
                 confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, strong OBV drop")
+                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume")
                 if latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
@@ -214,7 +215,7 @@ class SignalPredictor:
                     conditions.append("Price below VWAP")
                 if any(p in patterns for p in ["engulfing", "evening_star"]):
                     confidence += 10
-                    conditions.append(f"Bearish pattern: {patterns[-1] if patterns else 'none'}")
+                    conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
             timeframe_weights = {"15m": 0.85, "1h": 0.9, "4h": 1.0, "1d": 1.1}
             confidence *= timeframe_weights.get(timeframe, 1.0)
@@ -256,3 +257,4 @@ class SignalPredictor:
         except Exception as e:
             logger.error("[%s] Error predicting signal for %s: %s", symbol, timeframe, str(e))
             return None
+```
