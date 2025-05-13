@@ -61,7 +61,7 @@ class SignalPredictor:
         true_range = ranges.max(axis=1)
         return true_range.rolling(window=period).mean()
 
-    def _calculate_bollinger_bands(self, series: pd.DataFrame, period: int = 20) -> tuple:
+    def _calculate_bollinger_bands(self, series: pd.Series, period: int = 20) -> tuple:
         sma = series.rolling(window=period).mean()
         std = series.rolling(window=period).std()
         upper_band = sma + (std * 2)
@@ -183,17 +183,22 @@ class SignalPredictor:
             conditions = []
 
             # LONG condition
-            if (latest['rsi'] < 35 and latest['macd'] > latest['macd_signal'] and latest['ema_20'] > latest['ema_50'] and
-                latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0 and
-                latest['volume'] > latest['volume_sma_20'] * 1.2 and
-                latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1):
+            if (pd.notna(latest['rsi']) and latest['rsi'] < 35 and 
+                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal'] and 
+                pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] > latest['ema_50'] and
+                pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] < 25 and 
+                pd.notna(latest['adx']) and latest['adx'] > 30 and 
+                pd.notna(latest['cci']) and latest['cci'] > 120 and 
+                pd.notna(latest['momentum']) and latest['momentum'] > 0 and
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2 and
+                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1):
                 direction = "LONG"
                 confidence += 25
                 conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume, rising OBV")
-                if latest['volume'] > latest['volume_sma_20'] * 1.2:
+                if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
-                if latest['close'] > latest['vwap']:
+                if pd.notna(latest['close']) and pd.notna(latest['vwap']) and latest['close'] > latest['vwap']:
                     confidence += 10
                     conditions.append("Price above VWAP")
                 if any(p in patterns for p in ["engulfing", "morning_star"]):
@@ -201,17 +206,22 @@ class SignalPredictor:
                     conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
             # SHORT condition
-            elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
-                  latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0 and
-                  latest['volume'] < latest['volume_sma_20'] * 0.8 and
-                  latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9):
+            elif (pd.notna(latest['rsi']) and latest['rsi'] > 65 and 
+                  pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'] and 
+                  pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] < latest['ema_50'] and
+                  pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] > 75 and 
+                  pd.notna(latest['adx']) and latest['adx'] > 30 and 
+                  pd.notna(latest['cci']) and latest['cci'] < -120 and 
+                  pd.notna(latest['momentum']) and latest['momentum'] < 0 and
+                  pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9 and
+                  pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9):
                 direction = "SHORT"
                 confidence += 25
                 conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume, falling OBV")
-                if latest['volume'] > latest['volume_sma_20'] * 1.2:
+                if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
-                if latest['close'] < latest['vwap']:
+                if pd.notna(latest['close']) and pd.notna(latest['vwap']) and latest['close'] < latest['vwap']:
                     confidence += 10
                     conditions.append("Price below VWAP")
                 if any(p in patterns for p in ["engulfing", "evening_star"]):
