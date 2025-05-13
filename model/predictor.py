@@ -20,19 +20,53 @@ class SignalPredictor:
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
-            df['rsi'] = self._calculate_rsi(df['close'], 14)
+            # Ensure input DataFrame is valid
+            if df.empty or len(df) < 20:
+                logger.warning("Insufficient data for indicator calculation (rows: %d)", len(df))
+                return df
+            
+            # RSI
+            df['rsi'] = self._calculate_rsi(df['close'], 14).fillna(50)  # Default to neutral RSI
+            
+            # MACD
             df['macd'], df['macd_signal'] = self._calculate_macd(df['close'])
-            df['atr'] = self._calculate_atr(df, 14)
-            df['volume_sma_20'] = df['volume'].rolling(window=20).mean()
+            df['macd'] = df['macd'].fillna(0)
+            df['macd_signal'] = df['macd_signal'].fillna(0)
+            
+            # ATR
+            df['atr'] = self._calculate_atr(df, 14).fillna(df['close'].diff().abs().mean())
+            
+            # Volume SMA
+            df['volume_sma_20'] = df['volume'].rolling(window=20).mean().fillna(df['volume'].mean())
+            
+            # Bollinger Bands
             df['bb_upper'], df['bb_lower'] = self._calculate_bollinger_bands(df['close'])
-            df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean()
-            df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
-            df['stoch_rsi'] = self._calculate_stoch_rsi(df['rsi'], 14)
-            df['adx'] = self._calculate_adx(df, 14)
-            df['cci'] = self._calculate_cci(df, 20)
-            df['vwap'] = self._calculate_vwap(df)
-            df['momentum'] = df['close'].diff(10)
-            df['obv'] = self._calculate_obv(df)
+            df['bb_upper'] = df['bb_upper'].fillna(df['close'])
+            df['bb_lower'] = df['bb_lower'].fillna(df['close'])
+            
+            # EMAs
+            df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean().fillna(df['close'])
+            df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean().fillna(df['close'])
+            
+            # Stochastic RSI (simplified to avoid NaN)
+            df['rsi'] = df['rsi'].fillna(50)  # Ensure RSI is filled
+            df['stoch_rsi'] = self._calculate_stoch_rsi(df['rsi'], 14).fillna(50)
+            
+            # ADX (simplified to avoid NaN)
+            df['adx'] = self._calculate_adx(df, 14).fillna(20)  # Default to neutral trend
+            
+            # CCI
+            df['cci'] = self._calculate_cci(df, 20).fillna(0)
+            
+            # VWAP
+            df['vwap'] = self._calculate_vwap(df).fillna(df['close'])
+            
+            # Momentum
+            df['momentum'] = df['close'].diff(10).fillna(0)
+            
+            # OBV
+            df['obv'] = self._calculate_obv(df).fillna(0)
+            
             logger.info("Indicators calculated: %s", ", ".join(self.indicators))
             return df
         except Exception as e:
@@ -40,76 +74,119 @@ class SignalPredictor:
             return df
 
     def _calculate_rsi(self, series: pd.Series, period: int) -> pd.Series:
-        delta = series.diff()
-        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-        loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
+        try:
+            delta = series.diff()
+            gain = delta.where(delta > 0, 0).rolling(window=period, min_periods=1).mean()
+            loss = -delta.where(delta < 0, 0).rolling(window=period, min_periods=1).mean()
+            rs = gain / loss
+            rs = rs.replace([np.inf, -np.inf], np.nan)  # Handle division by zero
+            rsi = 100 - (100 / (1 + rs))
+            return rsi
+        except Exception as e:
+            logger.error("Error in RSI calculation: %s", str(e))
+            return pd.Series(np.nan, index=series.index)
 
     def _calculate_macd(self, series: pd.Series) -> tuple:
-        exp1 = series.ewm(span=12, adjust=False).mean()
-        exp2 = series.ewm(span=26, adjust=False).mean()
-        macd = exp1 - exp2
-        signal = macd.ewm(span=9, adjust=False).mean()
-        return macd, signal
+        try:
+            exp1 = series.ewm(span=12, adjust=False).mean()
+            exp2 = series.ewm(span=26, adjust=False).mean()
+            macd = exp1 - exp2
+            signal = macd.ewm(span=9, adjust=False).mean()
+            return macd, signal
+        except Exception as e:
+            logger.error("Error in MACD calculation: %s", str(e))
+            return pd.Series(np.nan, index=series.index), pd.Series(np.nan, index=series.index)
 
     def _calculate_atr(self, df: pd.DataFrame, period: int) -> pd.Series:
-        high_low = df['high'] - df['low']
-        high_close = np.abs(df['high'] - df['close'].shift())
-        low_close = np.abs(df['low'] - df['close'].shift())
-        ranges = pd.concat([high_low, high_close, low_close], axis=1)
-        true_range = ranges.max(axis=1)
-        return true_range.rolling(window=period).mean()
+        try:
+            high_low = df['high'] - df['low']
+            high_close = np.abs(df['high'] - df['close'].shift())
+            low_close = np.abs(df['low'] - df['close'].shift())
+            ranges = pd.concat([high_low, high_close, low_close], axis=1)
+            true_range = ranges.max(axis=1)
+            return true_range.rolling(window=period, min_periods=1).mean()
+        except Exception as e:
+            logger.error("Error in ATR calculation: %s", str(e))
+            return pd.Series(np.nan, index=df.index)
 
     def _calculate_bollinger_bands(self, series: pd.Series, period: int = 20) -> tuple:
-        sma = series.rolling(window=period).mean()
-        std = series.rolling(window=period).std()
-        upper_band = sma + (std * 2)
-        lower_band = sma - (std * 2)
-        return upper_band, lower_band
+        try:
+            sma = series.rolling(window=period, min_periods=1).mean()
+            std = series.rolling(window=period, min_periods=1).std()
+            upper_band = sma + (std * 2)
+            lower_band = sma - (std * 2)
+            return upper_band, lower_band
+        except Exception as e:
+            logger.error("Error in Bollinger Bands calculation: %s", str(e))
+            return pd.Series(np.nan, index=series.index), pd.Series(np.nan, index=series.index)
 
     def _calculate_stoch_rsi(self, rsi: pd.Series, period: int) -> pd.Series:
-        min_rsi = rsi.rolling(window=period).min()
-        max_rsi = rsi.rolling(window=period).max()
-        stoch_rsi = (rsi - min_rsi) / (max_rsi - min_rsi) * 100
-        return stoch_rsi
+        try:
+            min_rsi = rsi.rolling(window=period, min_periods=1).min()
+            max_rsi = rsi.rolling(window=period, min_periods=1).max()
+            stoch_rsi = (rsi - min_rsi) / (max_rsi - min_rsi) * 100
+            stoch_rsi = stoch_rsi.replace([np.inf, -np.inf], np.nan)
+            return stoch_rsi
+        except Exception as e:
+            logger.error("Error in Stochastic RSI calculation: %s", str(e))
+            return pd.Series(np.nan, index=rsi.index)
 
     def _calculate_adx(self, df: pd.DataFrame, period: int) -> pd.Series:
-        high = df['high']
-        low = df['low']
-        plus_dm = high.diff()
-        minus_dm = low.diff()
-        plus_dm[plus_dm < 0] = 0
-        minus_dm[minus_dm > 0] = 0
-        tr = self._calculate_atr(df, period)
-        plus_di = 100 * plus_dm.rolling(window=period).mean() / tr
-        minus_di = 100 * (-minus_dm).rolling(window=period).mean() / tr
-        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
-        adx = dx.rolling(window=period).mean()
-        return adx
+        try:
+            high = df['high']
+            low = df['low']
+            plus_dm = high.diff()
+            minus_dm = low.diff()
+            plus_dm[plus_dm < 0] = 0
+            minus_dm[minus_dm > 0] = 0
+            tr = self._calculate_atr(df, period)
+            plus_di = 100 * plus_dm.rolling(window=period, min_periods=1).mean() / tr
+            minus_di = 100 * (-minus_dm).rolling(window=period, min_periods=1).mean() / tr
+            dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
+            dx = dx.replace([np.inf, -np.inf], np.nan)
+            adx = dx.rolling(window=period, min_periods=1).mean()
+            return adx
+        except Exception as e:
+            logger.error("Error in ADX calculation: %s", str(e))
+            return pd.Series(np.nan, index=df.index)
 
     def _calculate_cci(self, df: pd.DataFrame, period: int) -> pd.Series:
-        typical_price = (df['high'] + df['low'] + df['close']) / 3
-        sma = typical_price.rolling(window=period).mean()
-        mean_deviation = typical_price.rolling(window=period).apply(lambda x: np.mean(np.abs(x - x.mean())))
-        cci = (typical_price - sma) / (0.015 * mean_deviation)
-        return cci
+        try:
+            typical_price = (df['high'] + df['low'] + df['close']) / 3
+            sma = typical_price.rolling(window=period, min_periods=1).mean()
+            mean_deviation = typical_price.rolling(window=period, min_periods=1).apply(lambda x: np.mean(np.abs(x - x.mean())))
+            cci = (typical_price - sma) / (0.015 * mean_deviation)
+            cci = cci.replace([np.inf, -np.inf], np.nan)
+            return cci
+        except Exception as e:
+            logger.error("Error in CCI calculation: %s", str(e))
+            return pd.Series(np.nan, index=df.index)
 
     def _calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
-        typical_price = (df['high'] + df['low'] + df['close']) / 3
-        vwap = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
-        return vwap
+        try:
+            typical_price = (df['high'] + df['low'] + df['close']) / 3
+            vwap = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
+            return vwap
+        except Exception as e:
+            logger.error("Error in VWAP calculation: %s", str(e))
+            return pd.Series(np.nan, index=df.index)
 
     def _calculate_obv(self, df: pd.DataFrame) -> pd.Series:
-        obv = [0]
-        for i in range(1, len(df)):
-            if df['close'].iloc[i] > df['close'].iloc[i-1]:
-                obv.append(obv[-1] + df['volume'].iloc[i])
-            elif df['close'].iloc[i] < df['close'].iloc[i-1]:
-                obv.append(obv[-1] - df['volume'].iloc[i])
-            else:
-                obv.append(obv[-1])
-        return pd.Series(obv, index=df.index)
+        try:
+            obv = [0]
+            for i in range(1, len(df)):
+                if pd.isna(df['close'].iloc[i]) or pd.isna(df['close'].iloc[i-1]) or pd.isna(df['volume'].iloc[i]):
+                    obv.append(obv[-1])
+                elif df['close'].iloc[i] > df['close'].iloc[i-1]:
+                    obv.append(obv[-1] + df['volume'].iloc[i])
+                elif df['close'].iloc[i] < df['close'].iloc[i-1]:
+                    obv.append(obv[-1] - df['volume'].iloc[i])
+                else:
+                    obv.append(obv[-1])
+            return pd.Series(obv, index=df.index)
+        except Exception as e:
+            logger.error("Error in OBV calculation: %s", str(e))
+            return pd.Series(np.nan, index=df.index)
 
     async def detect_candle_patterns(self, df: pd.DataFrame) -> list:
         patterns = []
@@ -123,6 +200,9 @@ class SignalPredictor:
                 prev_close = df['close'].iloc[i-1]
                 prev2_open = df['open'].iloc[i-2]
                 prev2_close = df['close'].iloc[i-2]
+                
+                if pd.isna([open_price, close_price, high_price, low_price, prev_open, prev_close, prev2_open, prev2_close]).any():
+                    continue
                 
                 body = abs(close_price - open_price)
                 if body < (high_price - low_price) * 0.1:
@@ -184,7 +264,7 @@ class SignalPredictor:
 
             # Volatility check
             latest = df.iloc[-1]
-            if latest['atr'] > df['atr'].rolling(window=20).mean() * 1.5:
+            if pd.notna(latest['atr']) and latest['atr'] > df['atr'].rolling(window=20, min_periods=1).mean() * 1.5:
                 logger.info(f"[{symbol}] High volatility for {timeframe}, skipping signal")
                 return None
 
