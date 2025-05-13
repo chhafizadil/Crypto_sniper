@@ -1,4 +1,3 @@
-# main.py
 import asyncio
 import logging
 import pandas as pd
@@ -26,7 +25,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 70.0
+CONFIDENCE_THRESHOLD = 80.0  # Changed from 70.0
 COOLDOWN_PERIOD = 4 * 3600
 
 predictor = SignalPredictor()
@@ -116,10 +115,10 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(10)
+            await asyncio.sleep(20)  # Changed from 10
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(600)
+    await asyncio.sleep(1200)  # Changed from 600
 
 @app.on_event("startup")
 async def startup_event():
@@ -131,13 +130,13 @@ async def startup_event():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(600)
+                await asyncio.sleep(1200)  # Changed from 600
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
-                await asyncio.sleep(900)
+                await asyncio.sleep(1200)  # Changed from 900
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
-        await asyncio.sleep(900)
+        await asyncio.sleep(1200)  # Changed from 900
 
 @app.on_event("shutdown")
 async def shutdown_event():
