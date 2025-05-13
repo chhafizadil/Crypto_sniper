@@ -25,7 +25,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 80.0  # Changed from 70.0
+CONFIDENCE_THRESHOLD = 80.0
 COOLDOWN_PERIOD = 4 * 3600
 
 predictor = SignalPredictor()
@@ -115,10 +115,10 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(20)  # Changed from 10
+            await asyncio.sleep(20)
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(1200)  # Changed from 600
+    await asyncio.sleep(1200)
 
 @app.on_event("startup")
 async def startup_event():
@@ -130,13 +130,13 @@ async def startup_event():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(1200)  # Changed from 600
+                await asyncio.sleep(1200)
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
-                await asyncio.sleep(1200)  # Changed from 900
+                await asyncio.sleep(1200)
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
-        await asyncio.sleep(1200)  # Changed from 900
+        await asyncio.sleep(1200)
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -150,7 +150,11 @@ async def shutdown_event():
 @app.get("/health")
 async def health_check():
     try:
-        return {"status": "healthy", "timestamp": str(datetime.utcnow())}
+        # Check if exchange is initialized
+        if EXCHANGE is not None:
+            return {"status": "healthy", "timestamp": str(datetime.utcnow())}
+        else:
+            raise Exception("Exchange not initialized")
     except Exception as e:
         log.error(f"Health check failed: {str(e)}")
         return {"status": "unhealthy", "error": str(e)}, 500
