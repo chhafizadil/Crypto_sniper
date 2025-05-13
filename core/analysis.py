@@ -1,4 +1,3 @@
-# core/analysis.py
 from typing import Dict, List, Optional
 from model.predictor import SignalPredictor
 import pandas as pd
@@ -49,7 +48,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             return None
 
         timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.90:
+        if timeframe_agreement < 0.90:  # Changed from 0.75
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
             return None
 
