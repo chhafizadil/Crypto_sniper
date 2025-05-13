@@ -20,51 +20,27 @@ class SignalPredictor:
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
-            # Ensure input DataFrame is valid
             if df.empty or len(df) < 20:
                 logger.warning("Insufficient data for indicator calculation (rows: %d)", len(df))
                 return df
             
-            # RSI
-            df['rsi'] = self._calculate_rsi(df['close'], 14).fillna(50)  # Default to neutral RSI
-            
-            # MACD
+            df['rsi'] = self._calculate_rsi(df['close'], 14).fillna(50)
             df['macd'], df['macd_signal'] = self._calculate_macd(df['close'])
             df['macd'] = df['macd'].fillna(0)
             df['macd_signal'] = df['macd_signal'].fillna(0)
-            
-            # ATR
             df['atr'] = self._calculate_atr(df, 14).fillna(df['close'].diff().abs().mean())
-            
-            # Volume SMA
             df['volume_sma_20'] = df['volume'].rolling(window=20).mean().fillna(df['volume'].mean())
-            
-            # Bollinger Bands
             df['bb_upper'], df['bb_lower'] = self._calculate_bollinger_bands(df['close'])
             df['bb_upper'] = df['bb_upper'].fillna(df['close'])
             df['bb_lower'] = df['bb_lower'].fillna(df['close'])
-            
-            # EMAs
             df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean().fillna(df['close'])
             df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean().fillna(df['close'])
-            
-            # Stochastic RSI (simplified to avoid NaN)
-            df['rsi'] = df['rsi'].fillna(50)  # Ensure RSI is filled
+            df['rsi'] = df['rsi'].fillna(50)
             df['stoch_rsi'] = self._calculate_stoch_rsi(df['rsi'], 14).fillna(50)
-            
-            # ADX (simplified to avoid NaN)
-            df['adx'] = self._calculate_adx(df, 14).fillna(20)  # Default to neutral trend
-            
-            # CCI
+            df['adx'] = self._calculate_adx(df, 14).fillna(20)
             df['cci'] = self._calculate_cci(df, 20).fillna(0)
-            
-            # VWAP
             df['vwap'] = self._calculate_vwap(df).fillna(df['close'])
-            
-            # Momentum
             df['momentum'] = df['close'].diff(10).fillna(0)
-            
-            # OBV
             df['obv'] = self._calculate_obv(df).fillna(0)
             
             logger.info("Indicators calculated: %s", ", ".join(self.indicators))
@@ -79,7 +55,7 @@ class SignalPredictor:
             gain = delta.where(delta > 0, 0).rolling(window=period, min_periods=1).mean()
             loss = -delta.where(delta < 0, 0).rolling(window=period, min_periods=1).mean()
             rs = gain / loss
-            rs = rs.replace([np.inf, -np.inf], np.nan)  # Handle division by zero
+            rs = rs.replace([np.inf, -np.inf], np.nan)
             rsi = 100 - (100 / (1 + rs))
             return rsi
         except Exception as e:
@@ -235,7 +211,7 @@ class SignalPredictor:
             precision = market['precision']['price']
             return precision
         except Exception as e:
-            logger.error(f"[{symbol}] Error fetching precision: {str(e)}")
+            logger.error(f"[{symbol}] Error fetching precision: %s", str(e))
             return 3
 
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
@@ -262,7 +238,6 @@ class SignalPredictor:
                 logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                 return None
 
-            # Volatility check
             latest = df.iloc[-1]
             if pd.notna(latest['atr']) and latest['atr'] > df['atr'].rolling(window=20, min_periods=1).mean() * 1.5:
                 logger.info(f"[{symbol}] High volatility for {timeframe}, skipping signal")
@@ -274,7 +249,6 @@ class SignalPredictor:
             conditions = []
 
             logger.info(f"[{symbol}] Checking LONG conditions for {timeframe}")
-            # LONG condition
             long_conditions_met = (
                 pd.notna(latest['rsi']) and latest['rsi'] < 35 and 
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal'] and 
@@ -283,13 +257,13 @@ class SignalPredictor:
                 pd.notna(latest['adx']) and latest['adx'] > 30 and 
                 pd.notna(latest['cci']) and latest['cci'] > 120 and 
                 pd.notna(latest['momentum']) and latest['momentum'] > 0 and
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2 and
-                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2
+                # OBV check removed
             )
             if long_conditions_met:
                 direction = "LONG"
                 confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume, rising OBV")
+                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume")
                 if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
@@ -301,7 +275,6 @@ class SignalPredictor:
                     conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
             logger.info(f"[{symbol}] Checking SHORT conditions for {timeframe}")
-            # SHORT condition
             short_conditions_met = (
                 pd.notna(latest['rsi']) and latest['rsi'] > 65 and 
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'] and 
@@ -310,13 +283,13 @@ class SignalPredictor:
                 pd.notna(latest['adx']) and latest['adx'] > 30 and 
                 pd.notna(latest['cci']) and latest['cci'] < -120 and 
                 pd.notna(latest['momentum']) and latest['momentum'] < 0 and
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9 and
-                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9
+                # OBV check removed
             )
             if short_conditions_met:
                 direction = "SHORT"
                 confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume, falling OBV")
+                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume")
                 if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
                     confidence += 15
                     conditions.append("Elevated volume")
