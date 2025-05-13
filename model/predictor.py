@@ -166,9 +166,20 @@ class SignalPredictor:
                     logger.info("[%s] Signal already generated for %s within last hour", symbol, timeframe)
                     return None
 
+            logger.info(f"[{symbol}] Validating DataFrame for {timeframe}")
+            if df.empty or len(df) < 20:
+                logger.warning(f"[{symbol}] Insufficient data for {timeframe} (rows: {len(df)})")
+                return None
+            if df[['open', 'high', 'low', 'close', 'volume']].isna().any().any():
+                logger.warning(f"[{symbol}] NaN values in OHLCV data for {timeframe}")
+                return None
+
             df = self.calculate_indicators(df)
             if df.empty or len(df) < 20:
-                logger.warning("[%s] Insufficient data for %s", symbol, timeframe)
+                logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
+                return None
+            if df[['rsi', 'macd', 'atr', 'volume_sma_20', 'ema_20', 'ema_50', 'stoch_rsi', 'adx', 'cci', 'vwap', 'momentum', 'obv']].isna().any().any():
+                logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                 return None
 
             # Volatility check
@@ -182,8 +193,10 @@ class SignalPredictor:
             direction = None
             conditions = []
 
+            logger.info(f"[{symbol}] Checking LONG conditions for {timeframe}")
             # LONG condition
-            if (pd.notna(latest['rsi']) and latest['rsi'] < 35 and 
+            long_conditions_met = (
+                pd.notna(latest['rsi']) and latest['rsi'] < 35 and 
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal'] and 
                 pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] > latest['ema_50'] and
                 pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] < 25 and 
@@ -191,7 +204,9 @@ class SignalPredictor:
                 pd.notna(latest['cci']) and latest['cci'] > 120 and 
                 pd.notna(latest['momentum']) and latest['momentum'] > 0 and
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2 and
-                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1):
+                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1
+            )
+            if long_conditions_met:
                 direction = "LONG"
                 confidence += 25
                 conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume, rising OBV")
@@ -205,16 +220,20 @@ class SignalPredictor:
                     confidence += 10
                     conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
+            logger.info(f"[{symbol}] Checking SHORT conditions for {timeframe}")
             # SHORT condition
-            elif (pd.notna(latest['rsi']) and latest['rsi'] > 65 and 
-                  pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'] and 
-                  pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] < latest['ema_50'] and
-                  pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] > 75 and 
-                  pd.notna(latest['adx']) and latest['adx'] > 30 and 
-                  pd.notna(latest['cci']) and latest['cci'] < -120 and 
-                  pd.notna(latest['momentum']) and latest['momentum'] < 0 and
-                  pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9 and
-                  pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9):
+            short_conditions_met = (
+                pd.notna(latest['rsi']) and latest['rsi'] > 65 and 
+                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'] and 
+                pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] < latest['ema_50'] and
+                pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] > 75 and 
+                pd.notna(latest['adx']) and latest['adx'] > 30 and 
+                pd.notna(latest['cci']) and latest['cci'] < -120 and 
+                pd.notna(latest['momentum']) and latest['momentum'] < 0 and
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9 and
+                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9
+            )
+            if short_conditions_met:
                 direction = "SHORT"
                 confidence += 25
                 conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume, falling OBV")
