@@ -214,7 +214,7 @@ class SignalPredictor:
                     conditions.append("Price below VWAP")
                 if any(p in patterns for p in ["engulfing", "evening_star"]):
                     confidence += 10
-                    conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
+                    conditions.append(f"Bearish pattern: {patterns[-1] if patterns else 'none'}")
 
             timeframe_weights = {"15m": 0.85, "1h": 0.9, "4h": 1.0, "1d": 1.1}
             confidence *= timeframe_weights.get(timeframe, 1.0)
