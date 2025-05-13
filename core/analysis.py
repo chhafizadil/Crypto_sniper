@@ -5,7 +5,7 @@ import numpy as np
 import logging
 from utils.logger import logger
 
-async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List[str], predictor: SignalPredictor, bars: int = 100) -> Optional[Dict]:
+async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List[str], predictor: SignalPredictor, bars: int = 200) -> Optional[Dict]:
     try:
         signals = []
         timeframe_data = {}
@@ -60,7 +60,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             return None
 
         timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.75:  # Relaxed from 0.90 to 0.75
+        if timeframe_agreement < 0.5:  # Relaxed from 0.75 to 0.5
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
             return None
 
