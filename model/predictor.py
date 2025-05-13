@@ -182,9 +182,10 @@ class SignalPredictor:
             direction = None
             conditions = []
 
+            # LONG condition
             if (latest['rsi'] < 35 and latest['macd'] > latest['macd_signal'] and latest['ema_20'] > latest['ema_50'] and
                 latest['stoch_rsi'] < 25 and latest['adx'] > 30 and latest['cci'] > 120 and latest['momentum'] > 0 and
-                latest['obv'] > df['obv'].shift(1) * 1.1):  # Changed: 10% OBV growth
+                latest['obv'] > (df['obv'].shift(1).iloc[-1] * 1.1 if not pd.isna(df['obv'].shift(1).iloc[-1]) else float('inf'))):
                 direction = "LONG"
                 confidence += 25
                 conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, strong OBV growth")
@@ -194,13 +195,14 @@ class SignalPredictor:
                 if latest['close'] > latest['vwap']:
                     confidence += 10
                     conditions.append("Price above VWAP")
-                if any(p in patterns for p in ["engulfing", "morning_star"]):  # Changed: Strict patterns
+                if any(p in patterns for p in ["engulfing", "morning_star"]):
                     confidence += 10
                     conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
 
+            # SHORT condition
             elif (latest['rsi'] > 65 and latest['macd'] < latest['macd_signal'] and latest['ema_20'] < latest['ema_50'] and
                   latest['stoch_rsi'] > 75 and latest['adx'] > 30 and latest['cci'] < -120 and latest['momentum'] < 0 and
-                  latest['obv'] < df['obv'].shift(1) * 0.9):  # Changed: 10% OBV drop
+                  latest['obv'] < (df['obv'].shift(1).iloc[-1] * 0.9 if not pd.isna(df['obv'].shift(1).iloc[-1]) else float('-inf'))):
                 direction = "SHORT"
                 confidence += 25
                 conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, strong OBV drop")
@@ -210,7 +212,7 @@ class SignalPredictor:
                 if latest['close'] < latest['vwap']:
                     confidence += 10
                     conditions.append("Price below VWAP")
-                if any(p in patterns for p in ["engulfing", "evening_star"]):  # Changed: Strict patterns
+                if any(p in patterns for p in ["engulfing", "evening_star"]):
                     confidence += 10
                     conditions.append(f"Bearish pattern: {patterns[-1] if patterns else 'none'}")
 
@@ -219,7 +221,7 @@ class SignalPredictor:
 
             confidence = min(max(confidence, 0), 100)
 
-            if confidence >= 80:  # Changed from 70
+            if confidence >= 80:
                 precision = await self.get_symbol_precision(symbol)
                 atr = latest['atr']
                 current_price = latest['close']
