@@ -256,4 +256,3 @@ class SignalPredictor:
         except Exception as e:
             logger.error("[%s] Error predicting signal for %s: %s", symbol, timeframe, str(e))
             return None
-```
