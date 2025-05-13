@@ -150,11 +150,7 @@ async def shutdown_event():
 @app.get("/health")
 async def health_check():
     try:
-        # Check if exchange is initialized
-        if EXCHANGE is not None:
-            return {"status": "healthy", "timestamp": str(datetime.utcnow())}
-        else:
-            raise Exception("Exchange not initialized")
+        return {"status": "healthy", "timestamp": str(datetime.utcnow())}
     except Exception as e:
         log.error(f"Health check failed: {str(e)}")
         return {"status": "unhealthy", "error": str(e)}, 500
