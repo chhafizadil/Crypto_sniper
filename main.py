@@ -15,6 +15,7 @@ EXCHANGE = ccxt.binance({
     'apiKey': os.getenv('BINANCE_API_KEY'),
     'secret': os.getenv('BINANCE_API_SECRET'),
     'enableRateLimit': True,
+    'defaultType': 'spot',  # Ensure spot market
 })
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
@@ -39,15 +40,20 @@ async def fetch_symbols():
     try:
         await asyncio.sleep(2)
         markets = await EXCHANGE.load_markets()
+        tickers = await EXCHANGE.fetch_tickers()
         SYMBOLS = []
         for symbol, market in markets.items():
             quote = market.get('quote', 'N/A')
             active = market.get('active', False)
+            ticker = tickers.get(symbol, {})
+            quote_volume = float(ticker.get('quoteVolume', 0))
             info = market.get('info', {})
-            logger.info(f"[{symbol}] Quote: {quote}, Active: {active}, Full Info: {info}")
-            if symbol.endswith('/USDT') and active:
+            logger.info(f"[{symbol}] Quote: {quote}, Active: {active}, QuoteVolume: {quote_volume}, Full Info: {info}")
+            if symbol.endswith('/USDT') and active and quote_volume >= MIN_VOLUME:
                 SYMBOLS.append(symbol)
-        logger.info(f"Selected {len(SYMBOLS)} USDT pairs (volume check disabled temporarily)")
+        logger.info(f"Selected {len(SYMBOLS)} USDT pairs with volume >= ${MIN_VOLUME}")
+        if not SYMBOLS:
+            logger.warning("No USDT pairs selected. Check API data or volume threshold.")
     except Exception as e:
         logger.error(f"Error fetching symbols: {str(e)}")
         raise
