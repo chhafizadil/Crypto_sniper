@@ -15,6 +15,8 @@ binance = None
 SYMBOLS = []
 TIMEFRAMES = ['15m', '1h', '4h', '1d']
 MIN_VOL = 1000000
+CONFIDENCE_THRESHOLD = 80.0
+COOLDOWN_PERIOD = 4 * 3600
 
 async def initialize_binance():
     global binance
