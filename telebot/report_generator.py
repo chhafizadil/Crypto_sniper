@@ -70,7 +70,7 @@ async def generate_daily_summary():
             'volume', 'confidence', 'tp1_possibility', 'tp2_possibility', 'tp3_possibility',
             'timeframe', 'status', 'indicators_used', 'backtest_result', 'trade_type'
         ]
-        df = pl.read_csv("logs/signals_log.csv", columns=columns)
+        df = pl.read_csv("logs/signals_log_new.csv", columns=columns)
         today = datetime.now(pytz.timezone('Asia/Karachi')).date()
         df = df.with_columns(pl.col("timestamp").cast(pl.DateTime))
 
