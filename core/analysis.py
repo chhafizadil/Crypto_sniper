@@ -40,7 +40,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 if df.empty or len(df) < 20:
                     logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
                     continue
-                if df[['rsi', 'macd', 'atr', 'volume_sma_20', 'ema_20', 'ema_50', 'stoch_rsi', 'adx', 'cci', 'vwap', 'momentum']].isna().any().any():
+                if df[['rsi', 'volume_sma_20']].isna().any().any():
                     logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                     continue
                 
