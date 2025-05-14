@@ -58,13 +58,13 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             return None
 
         timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.75:  # Tightened for accuracy
+        if timeframe_agreement < 0.5:  # Loosened for more signals
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
             return None
 
         avg_confidence = np.mean([s['confidence'] for s in signals])
         best_signal = max(signals, key=lambda x: x['confidence'])
-        best_signal['confidence'] = min(avg_confidence * 1.1, 100)
+        best_signal['confidence'] = min(avg_confidence, 100)  # Removed *1.1 for stable confidence
         logger.info(f"[{symbol}] Final signal selected with adjusted confidence: {best_signal['confidence']:.2f}%")
 
         return {"symbol": symbol, "signals": [best_signal]}
