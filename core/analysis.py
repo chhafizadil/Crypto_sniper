@@ -17,7 +17,6 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 
-                # Validate DataFrame
                 if df.empty or len(df) < 20:
                     logger.warning(f"[{symbol}] Empty or insufficient data for {timeframe} (rows: {len(df)})")
                     continue
@@ -41,7 +40,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 if df.empty or len(df) < 20:
                     logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
                     continue
-                if df[['rsi', 'macd', 'atr', 'volume_sma_20', 'ema_20', 'ema_50', 'stoch_rsi', 'adx', 'cci', 'vwap', 'momentum', 'obv']].isna().any().any():
+                if df[['rsi', 'macd', 'atr', 'volume_sma_20', 'ema_20', 'ema_50', 'stoch_rsi', 'adx', 'cci', 'vwap', 'momentum']].isna().any().any():
                     logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                     continue
                 
@@ -60,7 +59,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             return None
 
         timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.5:  # Relaxed from 0.75 to 0.5
+        if timeframe_agreement < 0.5:
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
             return None
 
