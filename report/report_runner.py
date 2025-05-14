@@ -1,15 +1,15 @@
 import schedule
 import time
-from datetime import datetime, timedelta
-from report.sender import send_daily_report
-from utils.logger import log
+from datetime import datetime
+from telebot.report_generator import generate_daily_summary
+from utils.logger import logger
 
-def schedule():
-    log("📅 Report scheduler started...")
-
-    # Adjust this for GMT+5 offset — run at UTC 18:59 == 11:59 PM GMT+5
-    schedule.every().day.at("18:59").do(send_daily_report)
-
+def run_scheduler():
+    logger.info("📅 Report scheduler started...")
+    schedule.every().day.at("23:59").do(lambda: asyncio.run(generate_daily_summary()))
     while True:
         schedule.run_pending()
         time.sleep(30)
+
+if __name__ == "__main__":
+    run_scheduler()
