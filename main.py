@@ -15,7 +15,7 @@ EXCHANGE = ccxt.binance({
     'apiKey': os.getenv('BINANCE_API_KEY'),
     'secret': os.getenv('BINANCE_API_SECRET'),
     'enableRateLimit': True,
-    'defaultType': 'spot',  # Ensure spot market
+    'defaultType': 'spot',
 })
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
@@ -42,18 +42,28 @@ async def fetch_symbols():
         markets = await EXCHANGE.load_markets()
         tickers = await EXCHANGE.fetch_tickers()
         SYMBOLS = []
+        btc_usdt_price = float((await EXCHANGE.fetch_ticker('BTC/USDT')).get('last', 0))
         for symbol, market in markets.items():
+            if not symbol.endswith('/USDT'):
+                continue
             quote = market.get('quote', 'N/A')
             active = market.get('active', False)
             ticker = tickers.get(symbol, {})
             quote_volume = float(ticker.get('quoteVolume', 0))
+            # Convert BTC volume to USDT if needed
+            if quote != 'USDT' and quote_volume > 0 and btc_usdt_price > 0:
+                quote_volume *= btc_usdt_price
             info = market.get('info', {})
             logger.info(f"[{symbol}] Quote: {quote}, Active: {active}, QuoteVolume: {quote_volume}, Full Info: {info}")
-            if symbol.endswith('/USDT') and active and quote_volume >= MIN_VOLUME:
+            if active and quote_volume >= MIN_VOLUME:
                 SYMBOLS.append(symbol)
+            elif not active:
+                logger.info(f"[{symbol}] Rejected: Not active")
+            elif quote_volume < MIN_VOLUME:
+                logger.info(f"[{symbol}] Rejected: QuoteVolume {quote_volume} < {MIN_VOLUME}")
         logger.info(f"Selected {len(SYMBOLS)} USDT pairs with volume >= ${MIN_VOLUME}")
         if not SYMBOLS:
-            logger.warning("No USDT pairs selected. Check API data or volume threshold.")
+            logger.warning("No USDT pairs selected. Check API data, volume threshold, or API keys.")
     except Exception as e:
         logger.error(f"Error fetching symbols: {str(e)}")
         raise
