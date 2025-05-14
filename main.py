@@ -2,13 +2,13 @@ import asyncio
 import logging
 import pandas as pd
 import ccxt.async_support as ccxt
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
 from model.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
-import aiohttp
+import httpx
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,14 +26,14 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 80.0
+CONFIDENCE_THRESHOLD = 70.0  # Lowered to allow strong signals
 COOLDOWN_PERIOD = 4 * 3600
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
 
 cooldowns = {}
-session = None
+http_client = None
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
     try:
@@ -111,9 +111,9 @@ async def process_symbol(symbol: str):
         log.info(f"⚠️ {symbol} - No valid signals")
 
 async def scan_symbols():
-    global session
-    if session is None:
-        session = aiohttp.ClientSession()
+    global http_client
+    if http_client is None:
+        http_client = httpx.AsyncClient()
     log.info(f"Scanning {SYMBOL_LIMIT} symbols across {TIMEFRAMES}")
     symbols = await get_high_volume_symbols()
     
@@ -149,21 +149,23 @@ async def shutdown_event():
     try:
         await EXCHANGE.close()
         log.info("Binance connection closed successfully")
-        if session and not session.closed:
-            await session.close()
-            log.info("AIOHTTP session closed successfully")
+        if http_client:
+            await http_client.aclose()
+            log.info("HTTPX client closed successfully")
     except Exception as e:
         log.error(f"Error closing resources: {str(e)}")
 
 @app.get("/health")
 async def health_check():
     try:
-        await EXCHANGE.fetch_ticker('BTC/USDT')
+        if EXCHANGE is None:
+            log.error("Health check failed: Exchange not initialized")
+            return {"status": "unhealthy", "error": "Exchange not initialized"}, 500
         log.info("Health check passed")
         return {"status": "healthy", "timestamp": str(datetime.utcnow())}
     except Exception as e:
         log.error(f"Health check failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "unhealthy", "error": str(e)}, 500
 
 if __name__ == "__main__":
     import uvicorn
