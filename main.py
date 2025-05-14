@@ -26,7 +26,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 70.0
+CONFIDENCE_THRESHOLD = 75.0  # Lowered to allow strong signals
 COOLDOWN_PERIOD = 4 * 3600
 
 predictor = SignalPredictor()
@@ -158,9 +158,9 @@ async def shutdown_event():
 @app.get("/health")
 async def health_check():
     try:
-        if EXCHANGE is None:
-            log.error("Health check failed: Exchange not initialized")
-            return {"status": "unhealthy", "error": "Exchange not initialized"}, 500
+        if EXCHANGE is None or not hasattr(EXCHANGE, 'markets'):
+            log.error("Health check failed: Exchange not initialized or markets not loaded")
+            return {"status": "unhealthy", "error": "Exchange not initialized or markets not loaded"}, 500
         log.info("Health check passed")
         return {"status": "healthy", "timestamp": str(datetime.utcnow())}
     except Exception as e:
