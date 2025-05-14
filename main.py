@@ -23,7 +23,7 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 150
+SYMBOL_LIMIT = 300
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0  # Lowered to allow 70% confidence signals
