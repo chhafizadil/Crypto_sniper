@@ -26,7 +26,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 70.0  # Lowered to allow strong signals
+CONFIDENCE_THRESHOLD = 70.0
 COOLDOWN_PERIOD = 4 * 3600
 
 predictor = SignalPredictor()
@@ -73,7 +73,7 @@ async def process_symbol(symbol: str):
     if symbol in cooldowns:
         cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
         if datetime.utcnow() < cooldown_end:
-            log.info(f"[{symbol}] In cooldown until {cooldown_end}")
+            log.info(f"[{symbol}] In cooldown until {cooldown_end} across all timeframes")
             return
     
     log.info(f"[{symbol}] Starting multi-timeframe analysis")
@@ -96,7 +96,7 @@ async def process_symbol(symbol: str):
         best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
         if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
             cooldowns[symbol] = datetime.utcnow()
-            log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
+            log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours across all timeframes")
             
             best_signal['trade_type'] = "Normal" if best_signal['confidence'] >= 80 else "Scalping"
             best_signal['timestamp'] = pd.Timestamp.now()
