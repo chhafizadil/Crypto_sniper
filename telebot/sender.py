@@ -2,7 +2,6 @@ import httpx
 import asyncio
 import pandas as pd
 from utils.logger import logger
-from utils.helpers import format_price
 
 BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
 CHAT_ID = "-4694205383"
@@ -19,8 +18,8 @@ async def send_telegram_signal(symbol: str, signal: dict):
         timeframe = signal.get("timeframe", "Unknown")
         trade_type = signal.get("trade_type", "Scalping")
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
-        tp1_possibility = signal.get("tp1_possibility", 0.75) * 100
-        tp2_possibility = signal.get("tp2_possibility", 0.55) * 100
+        tp1_possibility = signal.get("tp1_possibility", 0.70) * 100
+        tp2_possibility = signal.get("tp2_possibility", 0.50) * 100
         tp3_possibility = signal.get("tp3_possibility", 0.35) * 100
 
         if entry == tp1:
