@@ -3,10 +3,13 @@ import numpy as np
 from typing import Dict, Optional
 from utils.logger import logger
 import ta
+import ccxt.async_support as ccxt
+from datetime import datetime
 
 class SignalPredictor:
     def __init__(self):
         self.min_data_points = 20
+        self.exchange = ccxt.binance()
         logger.info("Signal Predictor initialized")
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -28,6 +31,33 @@ class SignalPredictor:
             logger.error(f"Error calculating indicators: {str(e)}")
             return df
 
+    async def check_signal_status(self, symbol: str, signal: Dict) -> str:
+        try:
+            ticker = await self.exchange.fetch_ticker(symbol)
+            current_price = ticker['last']
+            if signal['direction'] == "LONG":
+                if current_price >= signal['tp3']:
+                    return "tp3"
+                elif current_price >= signal['tp2']:
+                    return "tp2"
+                elif current_price >= signal['tp1']:
+                    return "tp1"
+                elif current_price <= signal['sl']:
+                    return "sl"
+            else:  # SHORT
+                if current_price <= signal['tp3']:
+                    return "tp3"
+                elif current_price <= signal['tp2']:
+                    return "tp2"
+                elif current_price <= signal['tp1']:
+                    return "tp1"
+                elif current_price >= signal['sl']:
+                    return "sl"
+            return "pending"
+        except Exception as e:
+            logger.error(f"Error checking signal status for {symbol}: {str(e)}")
+            return "pending"
+
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
         try:
             if df.empty or len(df) < self.min_data_points:
@@ -40,7 +70,7 @@ class SignalPredictor:
                 return None
 
             long_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] < 38,  # Relaxed for more LONG signals
+                pd.notna(latest['rsi']) and latest['rsi'] < 38,
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2,
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
             ]
@@ -50,8 +80,8 @@ class SignalPredictor:
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal']
             ]
 
-            long_confidence = sum([30 for cond in long_conditions if cond]) + 10
-            short_confidence = sum([30 for cond in short_conditions if cond]) + 10
+            long_confidence = sum([35 if i < 2 else 30 for i, cond in enumerate(long_conditions) if cond])
+            short_confidence = sum([35 if i < 2 else 30 for i, cond in enumerate(short_conditions) if cond])
 
             direction = None
             confidence = 0
@@ -78,10 +108,10 @@ class SignalPredictor:
 
             if direction:
                 current_price = latest['close']
-                atr = max(latest['atr'], 0.0001)  # Minimum ATR to avoid invalid TP/SL
-                tp1_possibility = 0.85 if confidence >= 80 else 0.75
-                tp2_possibility = 0.65 if confidence >= 80 else 0.55
-                tp3_possibility = 0.45 if confidence >= 80 else 0.35
+                atr = max(latest['atr'], current_price * 0.001)
+                tp1_possibility = 0.65 + confidence / 400
+                tp2_possibility = 0.50 + confidence / 500
+                tp3_possibility = 0.35 + confidence / 600
                 signal = {
                     "symbol": symbol,
                     "direction": direction,
@@ -96,7 +126,9 @@ class SignalPredictor:
                     "tp1_possibility": tp1_possibility,
                     "tp2_possibility": tp2_possibility,
                     "tp3_possibility": tp3_possibility,
-                    "volume": latest['volume']
+                    "volume": latest['volume'],
+                    "status": "pending",
+                    "hit_timestamp": None
                 }
                 logger.info(
                     f"[{symbol}] Signal for {timeframe}: {direction}, Confidence: {confidence:.2f}%, "
@@ -106,9 +138,7 @@ class SignalPredictor:
                     f"SL: {signal['sl']:.2f}"
                 )
                 return signal
-            else:
-                logger.info(f"[{symbol}] No signal for {timeframe}")
-                return None
+            return None
         except Exception as e:
             logger.error(f"[{symbol}] Error predicting signal for {timeframe}: {str(e)}")
             return None
