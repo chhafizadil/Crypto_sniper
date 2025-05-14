@@ -1,10 +1,8 @@
-# utils/logger.py
 import os
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 import pandas as pd
-import pytz
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -15,7 +13,7 @@ log_formatter = logging.Formatter(
 )
 
 log_file = os.path.join(LOG_DIR, "bot.log")
-file_handler = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3)
+file_handler = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=3)
 file_handler.setFormatter(log_formatter)
 file_handler.setLevel(logging.INFO)
 
@@ -31,7 +29,7 @@ logger.propagate = False
 
 def log_signal_to_csv(signal):
     try:
-        csv_path = "logs/signals_log.csv"
+        csv_path = "logs/signals_log_new.csv"
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
         data = pd.DataFrame({
             "symbol": [signal.get("symbol", "")],
@@ -49,7 +47,8 @@ def log_signal_to_csv(signal):
             "tp3_possibility": [signal.get("tp3_possibility", 0)],
             "conditions": [", ".join(signal.get("conditions", []))],
             "volume": [signal.get("volume", 0)],
-            "status": ["pending"]
+            "status": [signal.get("status", "pending")],
+            "hit_timestamp": [signal.get("hit_timestamp", None)]
         })
 
         if os.path.exists(csv_path):
@@ -76,7 +75,7 @@ def archive_old_logs(csv_path):
         if df.empty:
             return
         
-        current_date = datetime.now(pytz.timezone('Asia/Karachi'))
+        current_date = datetime.utcnow()
         week_ago = current_date - pd.Timedelta(days=7)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         old_data = df[df['timestamp'].dt.date < week_ago.date()]
