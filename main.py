@@ -19,7 +19,7 @@ EXCHANGE = ccxt.binance({
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 70.0
+CONFIDENCE_THRESHOLD = 80.0
 COOLDOWN_PERIOD = 6 * 3600  # 6 hours in seconds
 predictor = SignalPredictor()
 SYMBOLS = []
@@ -27,7 +27,7 @@ last_signal_time = {}
 
 async def initialize_binance():
     try:
-        await asyncio.sleep(2)  # Delay to avoid API rate limit
+        await asyncio.sleep(2)
         await EXCHANGE.load_markets()
         logger.info("Binance API connection successful")
     except Exception as e:
@@ -37,17 +37,17 @@ async def initialize_binance():
 async def fetch_symbols():
     global SYMBOLS
     try:
-        await asyncio.sleep(2)  # Delay to avoid API rate limit
+        await asyncio.sleep(2)
         markets = await EXCHANGE.load_markets()
         SYMBOLS = []
         for symbol, market in markets.items():
             quote = market.get('quote', 'N/A')
             active = market.get('active', False)
-            quote_volume = float(market.get('info', {}).get('quoteVolume', 0))
-            logger.info(f"[{symbol}] Quote: {quote}, Active: {active}, QuoteVolume: {quote_volume}")
-            if symbol.endswith('/USDT') and active and quote_volume >= MIN_VOLUME:
+            info = market.get('info', {})
+            logger.info(f"[{symbol}] Quote: {quote}, Active: {active}, Full Info: {info}")
+            if symbol.endswith('/USDT') and active:
                 SYMBOLS.append(symbol)
-        logger.info(f"Selected {len(SYMBOLS)} USDT pairs with volume >= ${MIN_VOLUME}")
+        logger.info(f"Selected {len(SYMBOLS)} USDT pairs (volume check disabled temporarily)")
     except Exception as e:
         logger.error(f"Error fetching symbols: {str(e)}")
         raise
@@ -57,7 +57,7 @@ async def run_bot():
         try:
             if not SYMBOLS:
                 logger.warning("No symbols selected, skipping bot loop")
-                await asyncio.sleep(600)  # Increased sleep to avoid API calls
+                await asyncio.sleep(600)
                 continue
             for symbol in SYMBOLS[:SYMBOL_LIMIT]:
                 current_time = datetime.utcnow()
@@ -66,7 +66,7 @@ async def run_bot():
                     logger.info(f"[{symbol}] On cooldown, skipping")
                     continue
                 logger.info(f"[{symbol}] Checking for signal")
-                await asyncio.sleep(1)  # Delay per symbol to avoid API rate limit
+                await asyncio.sleep(1)
                 result = await analyze_symbol_multi_timeframe(EXCHANGE, symbol, TIMEFRAMES, predictor)
                 if result and result.get('signals'):
                     signal = result['signals'][0]
@@ -77,10 +77,10 @@ async def run_bot():
                         logger.info(f"⚠️ {symbol} - Signal confidence too low: {signal.get('confidence')}%")
                 else:
                     logger.info(f"⚠️ {symbol} - No valid signals")
-                await asyncio.sleep(1)  # Increased sleep to reduce API calls
+                await asyncio.sleep(1)
         except Exception as e:
             logger.error(f"Error in bot loop: {str(e)}")
-            await asyncio.sleep(300)  # Increased sleep on error
+            await asyncio.sleep(300)
 
 @app.on_event("startup")
 async def startup_event():
@@ -100,7 +100,7 @@ async def shutdown_event():
 @app.get("/health")
 async def health_check():
     try:
-        await asyncio.sleep(2)  # Delay to avoid API rate limit
+        await asyncio.sleep(2)
         await EXCHANGE.fetch_ticker('BTC/USDT')
         logger.info("Health check passed")
         return {"status": "healthy"}
