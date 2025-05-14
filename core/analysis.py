@@ -2,7 +2,6 @@ from typing import Dict, List, Optional
 from model.predictor import SignalPredictor
 import pandas as pd
 import numpy as np
-import logging
 from utils.logger import logger
 
 async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List[str], predictor: SignalPredictor, bars: int = 200) -> Optional[Dict]:
@@ -40,7 +39,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 if df.empty or len(df) < 20:
                     logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
                     continue
-                if df[['rsi', 'volume_sma_20']].isna().any().any():
+                if df[['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr']].isna().any().any():
                     logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                     continue
                 
