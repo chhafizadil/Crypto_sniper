@@ -14,7 +14,7 @@ predictor = SignalPredictor()
 binance = None
 SYMBOLS = []
 TIMEFRAMES = ['15m', '1h', '4h', '1d']
-MIN_VOL = 1000000
+MIN_VOL = 10000
 
 async def initialize_binance():
     global binance
