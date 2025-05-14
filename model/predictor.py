@@ -40,7 +40,7 @@ class SignalPredictor:
                 return None
 
             long_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] < 35,  # Softened for more LONG signals
+                pd.notna(latest['rsi']) and latest['rsi'] < 40,  # Softened for more LONG signals
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2,
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
             ]
@@ -61,7 +61,7 @@ class SignalPredictor:
                 direction = "LONG"
                 confidence = long_confidence
                 conditions_met = [
-                    "rsi < 35" if long_conditions[0] else "",
+                    "rsi < 40" if long_conditions[0] else "",
                     "volume > volume_sma_20 * 1.2" if long_conditions[1] else "",
                     "macd > macd_signal"
                 ]
