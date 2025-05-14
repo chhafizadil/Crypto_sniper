@@ -40,7 +40,7 @@ class SignalPredictor:
                 return None
 
             long_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] < 30,
+                pd.notna(latest['rsi']) and latest['rsi'] < 35,  # Softened for more LONG signals
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2,
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
             ]
@@ -61,7 +61,7 @@ class SignalPredictor:
                 direction = "LONG"
                 confidence = long_confidence
                 conditions_met = [
-                    "rsi < 30" if long_conditions[0] else "",
+                    "rsi < 35" if long_conditions[0] else "",
                     "volume > volume_sma_20 * 1.2" if long_conditions[1] else "",
                     "macd > macd_signal"
                 ]
@@ -78,7 +78,10 @@ class SignalPredictor:
 
             if direction:
                 current_price = latest['close']
-                atr = latest['atr']
+                atr = max(latest['atr'], 0.0001)  # Minimum ATR to avoid invalid TP/SL
+                tp1_possibility = 0.85 if confidence >= 80 else 0.75
+                tp2_possibility = 0.65 if confidence >= 80 else 0.55
+                tp3_possibility = 0.45 if confidence >= 80 else 0.35
                 signal = {
                     "symbol": symbol,
                     "direction": direction,
@@ -90,9 +93,9 @@ class SignalPredictor:
                     "tp2": round(current_price + atr * 2.5, 2) if direction == "LONG" else round(current_price - atr * 2.5, 2),
                     "tp3": round(current_price + atr * 4.0, 2) if direction == "LONG" else round(current_price - atr * 4.0, 2),
                     "sl": round(current_price - atr * 1.0, 2) if direction == "LONG" else round(current_price + atr * 1.0, 2),
-                    "tp1_possibility": 0.85,
-                    "tp2_possibility": 0.65,
-                    "tp3_possibility": 0.45,
+                    "tp1_possibility": tp1_possibility,
+                    "tp2_possibility": tp2_possibility,
+                    "tp3_possibility": tp3_possibility,
                     "volume": latest['volume']
                 }
                 logger.info(
