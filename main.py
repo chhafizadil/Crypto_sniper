@@ -14,7 +14,6 @@ predictor = SignalPredictor()
 binance = None
 SYMBOLS = []
 TIMEFRAMES = ['15m', '1h', '4h', '1d']
-MIN_VOL = 10000
 
 async def initialize_binance():
     global binance
@@ -34,11 +33,12 @@ async def fetch_symbols():
     global SYMBOLS
     try:
         markets = await binance.load_markets()
-        SYMBOLS = [
-            symbol for symbol, market in markets.items()
-            if market['quote'] == 'USDT' and market['active'] and market.get('info', {}).get('volume', 0) >= MIN_VOL
-        ]
-        logger.info(f"Selected {len(SYMBOLS)} USDT pairs with volume >= ${MIN_VOL}")
+        SYMBOLS = []
+        for symbol, market in markets.items():
+            logger.info(f"[{symbol}] Quote: {market.get('quote', 'N/A')}, Active: {market.get('active', False)}, Info: {market.get('info', {})}")
+            if symbol.endswith('/USDT') and market.get('active', False):
+                SYMBOLS.append(symbol)
+        logger.info(f"Selected {len(SYMBOLS)} USDT pairs")
     except Exception as e:
         logger.error(f"Error fetching symbols: {str(e)}")
         raise
@@ -46,6 +46,10 @@ async def fetch_symbols():
 async def run_bot():
     while True:
         try:
+            if not SYMBOLS:
+                logger.warning("No symbols selected, skipping bot loop")
+                await asyncio.sleep(60)
+                continue
             for symbol in SYMBOLS[:150]:
                 logger.info(f"[{symbol}] Checking for cooldown")
                 result = await analyze_symbol_multi_timeframe(binance, symbol, TIMEFRAMES, predictor)
