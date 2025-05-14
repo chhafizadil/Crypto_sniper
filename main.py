@@ -26,8 +26,8 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
-CONFIDENCE_THRESHOLD = 75.0  # Lowered to allow strong signals
-COOLDOWN_PERIOD = 4 * 3600
+CONFIDENCE_THRESHOLD = 70.0  # Lowered to allow 70% confidence signals
+COOLDOWN_PERIOD = 21600  # 6 hours
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
@@ -36,14 +36,20 @@ cooldowns = {}
 http_client = None
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
-    try:
-        ohlcv = await EXCHANGE.fetch_ohlcv(symbol, timeframe, limit=limit)
-        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-        return df
-    except Exception as e:
-        log.error(f"[{symbol}] Error fetching OHLCV for {timeframe}: {str(e)}")
-        return pd.DataFrame()
+    for attempt in range(3):  # Retry logic for API limits
+        try:
+            ohlcv = await EXCHANGE.fetch_ohlcv(symbol, timeframe, limit=limit)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            return df
+        except ccxt.RateLimitExceeded:
+            log.warning(f"[{symbol}] Rate limit exceeded for {timeframe}, retrying in 10s")
+            await asyncio.sleep(10)
+        except Exception as e:
+            log.error(f"[{symbol}] Error fetching OHLCV for {timeframe}: {str(e)}")
+            return pd.DataFrame()
+    log.error(f"[{symbol}] Failed to fetch OHLCV for {timeframe} after 3 attempts")
+    return pd.DataFrame()
 
 async def get_high_volume_symbols() -> List[str]:
     try:
@@ -120,10 +126,10 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(20)
+            await asyncio.sleep(30)  # Increased to 30s to avoid API limits
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(1200)
+    await asyncio.sleep(1800)  # Increased to 30 minutes
 
 @app.on_event("startup")
 async def startup_event():
@@ -135,13 +141,13 @@ async def startup_event():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(1200)
+                await asyncio.sleep(1800)  # Increased to 30 minutes
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
-                await asyncio.sleep(1200)
+                await asyncio.sleep(1800)
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
-        await asyncio.sleep(1200)
+        await asyncio.sleep(1800)
 
 @app.on_event("shutdown")
 async def shutdown_event():
