@@ -1,363 +1,100 @@
 import pandas as pd
 import numpy as np
-import logging
-from datetime import datetime, timedelta
 from typing import Dict, Optional
 from utils.logger import logger
-import ccxt.async_support as ccxt
-from utils.helpers import format_price
+import ta
 
 class SignalPredictor:
     def __init__(self):
-        self.indicators = [
-            "rsi", "macd", "atr", "volume", "bollinger", "volume_sma_20", 
-            "ema_20", "ema_50", "stoch_rsi", "adx", "cci", "vwap", "momentum", "obv"
-        ]
-        self.candle_patterns = ["doji", "engulfing", "harami", "morning_star", "evening_star"]
-        self.previous_signals = {}
-        self.exchange = ccxt.binance()
-        logger.info("Signal Predictor initialized with %d indicators and candle patterns", len(self.indicators))
+        self.min_data_points = 20
+        logger.info("Signal Predictor initialized")
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         try:
-            if df.empty or len(df) < 20:
-                logger.warning("Insufficient data for indicator calculation (rows: %d)", len(df))
-                return df
+            df = df.copy()
+            df['rsi'] = ta.momentum.RSIIndicator(df['close'], window=14, fillna=True).rsi()
+            df['macd'] = ta.trend.MACD(df['close'], window_slow=26, window_fast=12, window_sign=9, fillna=True).macd()
+            df['macd_signal'] = ta.trend.MACD(df['close'], window_slow=26, window_fast=12, window_sign=9, fillna=True).macd_signal()
+            df['atr'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14, fillna=True).average_true_range()
+            df['volume_sma_20'] = df['volume'].rolling(window=20, min_periods=1).mean()
+            df['ema_20'] = ta.trend.EMAIndicator(df['close'], window=20, fillna=True).ema_indicator()
+            df['ema_50'] = ta.trend.EMAIndicator(df['close'], window=50, fillna=True).ema_indicator()
+            df['stoch_rsi'] = ta.momentum.StochasticRSIIndicator(df['close'], window=14, smooth1=3, smooth2=3, fillna=True).stochrsi()
+            df['adx'] = ta.trend.ADXIndicator(df['high'], df['low'], df['close'], window=14, fillna=True).adx()
+            df['cci'] = ta.trend.CCIIndicator(df['high'], df['low'], df['close'], window=20, fillna=True).cci()
+            df['vwap'] = ta.volume.VolumeWeightedAveragePrice(df['high'], df['low'], df['close'], df['volume'], window=14, fillna=True).volume_weighted_average_price()
+            df['momentum'] = ta.momentum.ROCIndicator(df['close'], window=10, fillna=True).roc()
+
+            df.replace([np.inf, -np.inf], np.nan, inplace=True)
+            df.fillna(method='ffill', inplace=True)
+            df.fillna(0.0, inplace=True)
             
-            df['rsi'] = self._calculate_rsi(df['close'], 14).fillna(50)
-            df['macd'], df['macd_signal'] = self._calculate_macd(df['close'])
-            df['macd'] = df['macd'].fillna(0)
-            df['macd_signal'] = df['macd_signal'].fillna(0)
-            df['atr'] = self._calculate_atr(df, 14).fillna(df['close'].diff().abs().mean())
-            df['volume_sma_20'] = df['volume'].rolling(window=20).mean().fillna(df['volume'].mean())
-            df['bb_upper'], df['bb_lower'] = self._calculate_bollinger_bands(df['close'])
-            df['bb_upper'] = df['bb_upper'].fillna(df['close'])
-            df['bb_lower'] = df['bb_lower'].fillna(df['close'])
-            df['ema_20'] = df['close'].ewm(span=20, adjust=False).mean().fillna(df['close'])
-            df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean().fillna(df['close'])
-            df['rsi'] = df['rsi'].fillna(50)
-            df['stoch_rsi'] = self._calculate_stoch_rsi(df['rsi'], 14).fillna(50)
-            df['adx'] = self._calculate_adx(df, 14).fillna(20)
-            df['cci'] = self._calculate_cci(df, 20).fillna(0)
-            df['vwap'] = self._calculate_vwap(df).fillna(df['close'])
-            df['momentum'] = df['close'].diff(10).fillna(0)
-            df['obv'] = self._calculate_obv(df).fillna(0)
-            
-            logger.info("Indicators calculated: %s", ", ".join(self.indicators))
+            logger.info("Indicators calculated: rsi, macd, atr, volume_sma_20, ema_20, ema_50, stoch_rsi, adx, cci, vwap, momentum")
             return df
         except Exception as e:
-            logger.error("Error calculating indicators: %s", str(e))
+            logger.error(f"Error calculating indicators: {str(e)}")
             return df
-
-    def _calculate_rsi(self, series: pd.Series, period: int) -> pd.Series:
-        try:
-            delta = series.diff()
-            gain = delta.where(delta > 0, 0).rolling(window=period, min_periods=1).mean()
-            loss = -delta.where(delta < 0, 0).rolling(window=period, min_periods=1).mean()
-            rs = gain / loss
-            rs = rs.replace([np.inf, -np.inf], np.nan)
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except Exception as e:
-            logger.error("Error in RSI calculation: %s", str(e))
-            return pd.Series(np.nan, index=series.index)
-
-    def _calculate_macd(self, series: pd.Series) -> tuple:
-        try:
-            exp1 = series.ewm(span=12, adjust=False).mean()
-            exp2 = series.ewm(span=26, adjust=False).mean()
-            macd = exp1 - exp2
-            signal = macd.ewm(span=9, adjust=False).mean()
-            return macd, signal
-        except Exception as e:
-            logger.error("Error in MACD calculation: %s", str(e))
-            return pd.Series(np.nan, index=series.index), pd.Series(np.nan, index=series.index)
-
-    def _calculate_atr(self, df: pd.DataFrame, period: int) -> pd.Series:
-        try:
-            high_low = df['high'] - df['low']
-            high_close = np.abs(df['high'] - df['close'].shift())
-            low_close = np.abs(df['low'] - df['close'].shift())
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            true_range = ranges.max(axis=1)
-            return true_range.rolling(window=period, min_periods=1).mean()
-        except Exception as e:
-            logger.error("Error in ATR calculation: %s", str(e))
-            return pd.Series(np.nan, index=df.index)
-
-    def _calculate_bollinger_bands(self, series: pd.Series, period: int = 20) -> tuple:
-        try:
-            sma = series.rolling(window=period, min_periods=1).mean()
-            std = series.rolling(window=period, min_periods=1).std()
-            upper_band = sma + (std * 2)
-            lower_band = sma - (std * 2)
-            return upper_band, lower_band
-        except Exception as e:
-            logger.error("Error in Bollinger Bands calculation: %s", str(e))
-            return pd.Series(np.nan, index=series.index), pd.Series(np.nan, index=series.index)
-
-    def _calculate_stoch_rsi(self, rsi: pd.Series, period: int) -> pd.Series:
-        try:
-            min_rsi = rsi.rolling(window=period, min_periods=1).min()
-            max_rsi = rsi.rolling(window=period, min_periods=1).max()
-            stoch_rsi = (rsi - min_rsi) / (max_rsi - min_rsi) * 100
-            stoch_rsi = stoch_rsi.replace([np.inf, -np.inf], np.nan)
-            return stoch_rsi
-        except Exception as e:
-            logger.error("Error in Stochastic RSI calculation: %s", str(e))
-            return pd.Series(np.nan, index=rsi.index)
-
-    def _calculate_adx(self, df: pd.DataFrame, period: int) -> pd.Series:
-        try:
-            high = df['high']
-            low = df['low']
-            plus_dm = high.diff()
-            minus_dm = low.diff()
-            plus_dm[plus_dm < 0] = 0
-            minus_dm[minus_dm > 0] = 0
-            tr = self._calculate_atr(df, period)
-            plus_di = 100 * plus_dm.rolling(window=period, min_periods=1).mean() / tr
-            minus_di = 100 * (-minus_dm).rolling(window=period, min_periods=1).mean() / tr
-            dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
-            dx = dx.replace([np.inf, -np.inf], np.nan)
-            adx = dx.rolling(window=period, min_periods=1).mean()
-            return adx
-        except Exception as e:
-            logger.error("Error in ADX calculation: %s", str(e))
-            return pd.Series(np.nan, index=df.index)
-
-    def _calculate_cci(self, df: pd.DataFrame, period: int) -> pd.Series:
-        try:
-            typical_price = (df['high'] + df['low'] + df['close']) / 3
-            sma = typical_price.rolling(window=period, min_periods=1).mean()
-            mean_deviation = typical_price.rolling(window=period, min_periods=1).apply(lambda x: np.mean(np.abs(x - x.mean())))
-            cci = (typical_price - sma) / (0.015 * mean_deviation)
-            cci = cci.replace([np.inf, -np.inf], np.nan)
-            return cci
-        except Exception as e:
-            logger.error("Error in CCI calculation: %s", str(e))
-            return pd.Series(np.nan, index=df.index)
-
-    def _calculate_vwap(self, df: pd.DataFrame) -> pd.Series:
-        try:
-            typical_price = (df['high'] + df['low'] + df['close']) / 3
-            vwap = (typical_price * df['volume']).cumsum() / df['volume'].cumsum()
-            return vwap
-        except Exception as e:
-            logger.error("Error in VWAP calculation: %s", str(e))
-            return pd.Series(np.nan, index=df.index)
-
-    def _calculate_obv(self, df: pd.DataFrame) -> pd.Series:
-        try:
-            obv = [0]
-            for i in range(1, len(df)):
-                if pd.isna(df['close'].iloc[i]) or pd.isna(df['close'].iloc[i-1]) or pd.isna(df['volume'].iloc[i]):
-                    obv.append(obv[-1])
-                elif df['close'].iloc[i] > df['close'].iloc[i-1]:
-                    obv.append(obv[-1] + df['volume'].iloc[i])
-                elif df['close'].iloc[i] < df['close'].iloc[i-1]:
-                    obv.append(obv[-1] - df['volume'].iloc[i])
-                else:
-                    obv.append(obv[-1])
-            return pd.Series(obv, index=df.index)
-        except Exception as e:
-            logger.error("Error in OBV calculation: %s", str(e))
-            return pd.Series(np.nan, index=df.index)
-
-    async def detect_candle_patterns(self, df: pd.DataFrame) -> list:
-        patterns = []
-        try:
-            for i in range(2, len(df)):
-                open_price = df['open'].iloc[i]
-                close_price = df['close'].iloc[i]
-                high_price = df['high'].iloc[i]
-                low_price = df['low'].iloc[i]
-                prev_open = df['open'].iloc[i-1]
-                prev_close = df['close'].iloc[i-1]
-                prev2_open = df['open'].iloc[i-2]
-                prev2_close = df['close'].iloc[i-2]
-                
-                if pd.isna([open_price, close_price, high_price, low_price, prev_open, prev_close, prev2_open, prev2_close]).any():
-                    continue
-                
-                body = abs(close_price - open_price)
-                if body < (high_price - low_price) * 0.1:
-                    patterns.append("doji")
-                
-                if (close_price > prev_open and open_price < prev_close and
-                    close_price > prev_close and open_price < prev_open):
-                    patterns.append("engulfing")
-                
-                if (body < abs(prev_open - prev_close) * 0.5 and
-                    high_price < prev_close and low_price > prev_open):
-                    patterns.append("harami")
-                
-                if (prev2_close > prev2_open and prev_close < prev_open and
-                    close_price > prev_open and close_price > (prev2_open + prev2_close) / 2):
-                    patterns.append("morning_star")
-                
-                if (prev2_close < prev2_open and prev_close > prev_open and
-                    close_price < prev_open and close_price < (prev2_open + prev2_close) / 2):
-                    patterns.append("evening_star")
-            return patterns
-        except Exception as e:
-            logger.error("Error detecting candle patterns: %s", str(e))
-            return []
-
-    async def get_symbol_precision(self, symbol: str) -> int:
-        try:
-            await self.exchange.load_markets()
-            market = self.exchange.markets[symbol]
-            precision = market['precision']['price']
-            return precision
-        except Exception as e:
-            logger.error(f"[{symbol}] Error fetching precision: %s", str(e))
-            return 3
 
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> Optional[Dict]:
         try:
-            if symbol in self.previous_signals and timeframe in self.previous_signals[symbol]:
-                last_signal_time = self.previous_signals[symbol][timeframe]
-                if datetime.utcnow() - last_signal_time < timedelta(hours=1):
-                    logger.info("[%s] Signal already generated for %s within last hour", symbol, timeframe)
-                    return None
-
-            logger.info(f"[{symbol}] Validating DataFrame for {timeframe}")
-            if df.empty or len(df) < 20:
-                logger.warning(f"[{symbol}] Insufficient data for {timeframe} (rows: {len(df)})")
-                return None
-            if df[['open', 'high', 'low', 'close', 'volume']].isna().any().any():
-                logger.warning(f"[{symbol}] NaN values in OHLCV data for {timeframe}")
-                return None
-
-            df = self.calculate_indicators(df)
-            if df.empty or len(df) < 20:
-                logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
-                return None
-            if df[['rsi', 'macd', 'atr', 'volume_sma_20', 'ema_20', 'ema_50', 'stoch_rsi', 'adx', 'cci', 'vwap', 'momentum', 'obv']].isna().any().any():
-                logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
+            if df.empty or len(df) < self.min_data_points:
+                logger.warning(f"[{symbol}] DataFrame empty or too short for {timeframe} (rows: {len(df)})")
                 return None
 
             latest = df.iloc[-1]
-            if pd.notna(latest['atr']) and latest['atr'] > df['atr'].rolling(window=20, min_periods=1).mean() * 1.5:
-                logger.info(f"[{symbol}] High volatility for {timeframe}, skipping signal")
+            if df[['rsi', 'macd', 'volume_sma_20']].isna().any().any():
+                logger.warning(f"[{symbol}] NaN values in critical indicators for {timeframe}")
                 return None
 
-            patterns = await self.detect_candle_patterns(df)
-            confidence = 0.0
+            long_conditions = [
+                pd.notna(latest['rsi']) and latest['rsi'] < 35,
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2
+            ]
+            short_conditions = [
+                pd.notna(latest['rsi']) and latest['rsi'] > 65,
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9
+            ]
+
+            long_confidence = sum([25 for cond in long_conditions if cond]) + 20
+            short_confidence = sum([25 for cond in short_conditions if cond]) + 20
+
             direction = None
-            conditions = []
+            confidence = 0
+            conditions_met = []
 
-            logger.info(f"[{symbol}] Checking LONG conditions for {timeframe}")
-            # LONG conditions with debug logging
-            logger.debug(f"[{symbol}] RSI: {latest['rsi'] if pd.notna(latest['rsi']) else 'NaN'}")
-            logger.debug(f"[{symbol}] MACD: {latest['macd'] if pd.notna(latest['macd']) else 'NaN'}, Signal: {latest['macd_signal'] if pd.notna(latest['macd_signal']) else 'NaN'}")
-            logger.debug(f"[{symbol}] EMA_20: {latest['ema_20'] if pd.notna(latest['ema_20']) else 'NaN'}, EMA_50: {latest['ema_50'] if pd.notna(latest['ema_50']) else 'NaN'}")
-            logger.debug(f"[{symbol}] Stoch_RSI: {latest['stoch_rsi'] if pd.notna(latest['stoch_rsi']) else 'NaN'}")
-            logger.debug(f"[{symbol}] ADX: {latest['adx'] if pd.notna(latest['adx']) else 'NaN'}")
-            logger.debug(f"[{symbol}] CCI: {latest['cci'] if pd.notna(latest['cci']) else 'NaN'}")
-            logger.debug(f"[{symbol}] Momentum: {latest['momentum'] if pd.notna(latest['momentum']) else 'NaN'}")
-            logger.debug(f"[{symbol}] Volume: {latest['volume'] if pd.notna(latest['volume']) else 'NaN'}, Volume_SMA_20: {latest['volume_sma_20'] if pd.notna(latest['volume_sma_20']) else 'NaN'}")
-            logger.debug(f"[{symbol}] OBV: {latest['obv'] if pd.notna(latest['obv']) else 'NaN'}, Prev_OBV: {df['obv'].shift(1).iloc[-1] if pd.notna(df['obv'].shift(1).iloc[-1]) else 'NaN'}")
-
-            long_conditions_met = (
-                pd.notna(latest['rsi']) and latest['rsi'] < 35 and 
-                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal'] and 
-                pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] > latest['ema_50'] and
-                pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] < 25 and 
-                pd.notna(latest['adx']) and latest['adx'] > 30 and 
-                pd.notna(latest['cci']) and latest['cci'] > 120 and 
-                pd.notna(latest['momentum']) and latest['momentum'] > 0 and
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2 and
-                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] > df['obv'].shift(1).iloc[-1] * 1.1
-            )
-            if long_conditions_met:
+            if all(long_conditions):
                 direction = "LONG"
-                confidence += 25
-                conditions.append("Oversold RSI, bullish MACD crossover, EMA trend, strong ADX, high CCI, positive momentum, high volume, rising OBV")
-                if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
-                    confidence += 15
-                    conditions.append("Elevated volume")
-                if pd.notna(latest['close']) and pd.notna(latest['vwap']) and latest['close'] > latest['vwap']:
-                    confidence += 10
-                    conditions.append("Price above VWAP")
-                if any(p in patterns for p in ["engulfing", "morning_star"]):
-                    confidence += 10
-                    conditions.append(f"Bullish pattern: {patterns[-1] if patterns else 'none'}")
-
-            logger.info(f"[{symbol}] Checking SHORT conditions for {timeframe}")
-            logger.debug(f"[{symbol}] RSI: {latest['rsi'] if pd.notna(latest['rsi']) else 'NaN'}")
-            logger.debug(f"[{symbol}] MACD: {latest['macd'] if pd.notna(latest['macd']) else 'NaN'}, Signal: {latest['macd_signal'] if pd.notna(latest['macd_signal']) else 'NaN'}")
-            logger.debug(f"[{symbol}] EMA_20: {latest['ema_20'] if pd.notna(latest['ema_20']) else 'NaN'}, EMA_50: {latest['ema_50'] if pd.notna(latest['ema_50']) else 'NaN'}")
-            logger.debug(f"[{symbol}] Stoch_RSI: {latest['stoch_rsi'] if pd.notna(latest['stoch_rsi']) else 'NaN'}")
-            logger.debug(f"[{symbol}] ADX: {latest['adx'] if pd.notna(latest['adx']) else 'NaN'}")
-            logger.debug(f"[{symbol}] CCI: {latest['cci'] if pd.notna(latest['cci']) else 'NaN'}")
-            logger.debug(f"[{symbol}] Momentum: {latest['momentum'] if pd.notna(latest['momentum']) else 'NaN'}")
-            logger.debug(f"[{symbol}] Volume: {latest['volume'] if pd.notna(latest['volume']) else 'NaN'}, Volume_SMA_20: {latest['volume_sma_20'] if pd.notna(latest['volume_sma_20']) else 'NaN'}")
-            logger.debug(f"[{symbol}] OBV: {latest['obv'] if pd.notna(latest['obv']) else 'NaN'}, Prev_OBV: {df['obv'].shift(1).iloc[-1] if pd.notna(df['obv'].shift(1).iloc[-1]) else 'NaN'}")
-
-            short_conditions_met = (
-                pd.notna(latest['rsi']) and latest['rsi'] > 65 and 
-                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'] and 
-                pd.notna(latest['ema_20']) and pd.notna(latest['ema_50']) and latest['ema_20'] < latest['ema_50'] and
-                pd.notna(latest['stoch_rsi']) and latest['stoch_rsi'] > 75 and 
-                pd.notna(latest['adx']) and latest['adx'] > 30 and 
-                pd.notna(latest['cci']) and latest['cci'] < -120 and 
-                pd.notna(latest['momentum']) and latest['momentum'] < 0 and
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9 and
-                pd.notna(latest['obv']) and pd.notna(df['obv'].shift(1).iloc[-1]) and latest['obv'] < df['obv'].shift(1).iloc[-1] * 0.9
-            )
-            if short_conditions_met:
+                confidence = long_confidence
+                conditions_met = ["rsi < 35", "volume > volume_sma_20 * 1.2"]
+            elif all(short_conditions):
                 direction = "SHORT"
-                confidence += 25
-                conditions.append("Overbought RSI, bearish MACD crossover, EMA trend, strong ADX, low CCI, negative momentum, low volume, falling OBV")
-                if pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2:
-                    confidence += 15
-                    conditions.append("Elevated volume")
-                if pd.notna(latest['close']) and pd.notna(latest['vwap']) and latest['close'] < latest['vwap']:
-                    confidence += 10
-                    conditions.append("Price below VWAP")
-                if any(p in patterns for p in ["engulfing", "evening_star"]):
-                    confidence += 10
-                    conditions.append(f"Bearish pattern: {patterns[-1] if patterns else 'none'}")
+                confidence = short_confidence
+                conditions_met = ["rsi > 65", "volume < volume_sma_20 * 0.9"]
 
-            timeframe_weights = {"15m": 0.85, "1h": 0.9, "4h": 1.0, "1d": 1.1}
-            confidence *= timeframe_weights.get(timeframe, 1.0)
-
-            confidence = min(max(confidence, 0), 100)
-
-            if confidence >= 80:
-                precision = await self.get_symbol_precision(symbol)
-                atr = latest['atr']
+            if direction:
                 current_price = latest['close']
-                
+                atr = latest['atr']
                 signal = {
                     "symbol": symbol,
-                    "timeframe": timeframe,
                     "direction": direction,
-                    "confidence": confidence,
-                    "entry": format_price(current_price, symbol),
-                    "tp1": format_price(current_price + atr * 1.2 if direction == "LONG" else current_price - atr * 1.2, symbol),
-                    "tp2": format_price(current_price + atr * 1.8 if direction == "LONG" else current_price - atr * 1.8, symbol),
-                    "tp3": format_price(current_price + atr * 2.5 if direction == "LONG" else current_price - atr * 2.5, symbol),
-                    "sl": format_price(current_price - atr * 1.2 if direction == "LONG" else current_price + atr * 1.2, symbol),
-                    "tp1_possibility": 0.75,
-                    "tp2_possibility": 0.55,
-                    "tp3_possibility": 0.35,
-                    "conditions": conditions,
+                    "entry": current_price,
+                    "confidence": min(confidence, 100),
+                    "timeframe": timeframe,
+                    "conditions": conditions_met,
+                    "tp1": current_price + atr * 1.5 if direction == "LONG" else current_price - atr * 1.5,
+                    "tp2": current_price + atr * 2.5 if direction == "LONG" else current_price - atr * 2.5,
+                    "tp3": current_price + atr * 4 if direction == "LONG" else current_price - atr * 4,
+                    "sl": current_price - atr * 1 if direction == "LONG" else current_price + atr * 1,
+                    "tp1_possibility": 0.85,
+                    "tp2_possibility": 0.65,
+                    "tp3_possibility": 0.45,
                     "volume": latest['volume']
                 }
-                logger.info("[%s] Signal generated - Direction: %s, Confidence: %.2f%%", 
-                           symbol, direction, confidence)
-                
-                if symbol not in self.previous_signals:
-                    self.previous_signals[symbol] = {}
-                self.previous_signals[symbol][timeframe] = datetime.utcnow()
-                
+                logger.info(f"[{symbol}] Signal for {timeframe}: {direction}, Confidence: {confidence:.2f}%")
                 return signal
             else:
-                logger.info("[%s] No valid signal or low confidence: %.2f%%", symbol, confidence)
+                logger.info(f"[{symbol}] No signal for {timeframe}")
                 return None
         except Exception as e:
-            logger.error("[%s] Error predicting signal for %s: %s", symbol, timeframe, str(e))
+            logger.error(f"[{symbol}] Error predicting signal for {timeframe}: {str(e)}")
             return None
