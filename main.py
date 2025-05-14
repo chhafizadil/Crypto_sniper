@@ -14,6 +14,7 @@ predictor = SignalPredictor()
 binance = None
 SYMBOLS = []
 TIMEFRAMES = ['15m', '1h', '4h', '1d']
+MIN_VOL = 1000000
 
 async def initialize_binance():
     global binance
@@ -35,10 +36,13 @@ async def fetch_symbols():
         markets = await binance.load_markets()
         SYMBOLS = []
         for symbol, market in markets.items():
-            logger.info(f"[{symbol}] Quote: {market.get('quote', 'N/A')}, Active: {market.get('active', False)}, Info: {market.get('info', {})}")
-            if symbol.endswith('/USDT') and market.get('active', False):
+            quote = market.get('quote', 'N/A')
+            active = market.get('active', False)
+            quote_volume = float(market.get('info', {}).get('quoteVolume', 0))
+            logger.info(f"[{symbol}] Quote: {quote}, Active: {active}, QuoteVolume: {quote_volume}")
+            if symbol.endswith('/USDT') and active and quote_volume >= MIN_VOL:
                 SYMBOLS.append(symbol)
-        logger.info(f"Selected {len(SYMBOLS)} USDT pairs")
+        logger.info(f"Selected {len(SYMBOLS)} USDT pairs with volume >= ${MIN_VOL}")
     except Exception as e:
         logger.error(f"Error fetching symbols: {str(e)}")
         raise
@@ -69,6 +73,16 @@ async def startup_event():
     await initialize_binance()
     await fetch_symbols()
     asyncio.create_task(run_bot())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global binance
+    try:
+        if binance:
+            await binance.close()
+            logger.info("Binance connection closed")
+    except Exception as e:
+        logger.error(f"Error closing Binance: {str(e)}")
 
 @app.get("/health")
 async def health_check():
