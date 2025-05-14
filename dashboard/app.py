@@ -17,7 +17,7 @@ async def dashboard(request: Request):
         log(f"[Dashboard] Loading - Memory: {memory:.2f} MB, CPU: {cpu_percent:.1f}%")
 
         # Load signals from signals_log.csv
-        signals_file = "logs/signals_log.csv"
+       signals_file = "logs/signals_log_new.csv"
         if not os.path.exists(signals_file):
             log(f"[Dashboard] Signals file not found at {signals_file}", level='ERROR')
             return templates.TemplateResponse("dashboard.html", {"request": request, "signals": []})
