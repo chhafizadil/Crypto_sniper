@@ -7,8 +7,11 @@ from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
 from model.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
+from telebot.report_generator import generate_daily_summary
 from datetime import datetime, timedelta
 import httpx
+import schedule
+import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +29,7 @@ EXCHANGE = ccxt.binance()
 SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 3000000
-CONFIDENCE_THRESHOLD = 70.0  # Lowered to allow 70% confidence signals
+CONFIDENCE_THRESHOLD = 70.0
 COOLDOWN_PERIOD = 21600  # 6 hours
 
 predictor = SignalPredictor()
@@ -36,7 +39,7 @@ cooldowns = {}
 http_client = None
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
-    for attempt in range(3):  # Retry logic for API limits
+    for attempt in range(3):
         try:
             ohlcv = await EXCHANGE.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -58,6 +61,7 @@ async def get_high_volume_symbols() -> List[str]:
         symbols = [
             symbol for symbol, ticker in tickers.items()
             if symbol.endswith('/USDT') and ticker.get('quoteVolume', 0) >= MIN_VOLUME
+            and symbol not in cooldowns
         ]
         log.info(f"Selected {len(symbols)} USDT pairs with volume >= ${MIN_VOLUME}")
         return symbols[:SYMBOL_LIMIT]
@@ -126,10 +130,17 @@ async def scan_symbols():
     for symbol in symbols:
         try:
             await process_symbol(symbol)
-            await asyncio.sleep(30)  # Increased to 30s to avoid API limits
+            await asyncio.sleep(40)  # Increased to 40s to avoid API limits
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(1800)  # Increased to 30 minutes
+    await asyncio.sleep(1800)
+
+def run_scheduler():
+    log.info("📅 Report scheduler started...")
+    schedule.every().day.at("23:59").do(lambda: asyncio.run(generate_daily_summary()))
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
 
 @app.on_event("startup")
 async def startup_event():
@@ -137,11 +148,15 @@ async def startup_event():
     try:
         await EXCHANGE.load_markets()
         log.info("Binance API connection successful")
+        # Start scheduler in a separate thread
+        import threading
+        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+        scheduler_thread.start()
         while True:
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(1800)  # Increased to 30 minutes
+                await asyncio.sleep(1800)
             except Exception as e:
                 log.error(f"Error in scan cycle: {str(e)}")
                 await asyncio.sleep(1800)
