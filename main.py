@@ -2,12 +2,13 @@ import asyncio
 import logging
 import pandas as pd
 import ccxt.async_support as ccxt
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
 from model.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
 from datetime import datetime, timedelta
+import aiohttp
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +33,7 @@ predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
 
 cooldowns = {}
+session = None
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
     try:
@@ -109,6 +111,9 @@ async def process_symbol(symbol: str):
         log.info(f"⚠️ {symbol} - No valid signals")
 
 async def scan_symbols():
+    global session
+    if session is None:
+        session = aiohttp.ClientSession()
     log.info(f"Scanning {SYMBOL_LIMIT} symbols across {TIMEFRAMES}")
     symbols = await get_high_volume_symbols()
     
@@ -144,16 +149,21 @@ async def shutdown_event():
     try:
         await EXCHANGE.close()
         log.info("Binance connection closed successfully")
+        if session and not session.closed:
+            await session.close()
+            log.info("AIOHTTP session closed successfully")
     except Exception as e:
-        log.error(f"Error closing Binance connection: {str(e)}")
+        log.error(f"Error closing resources: {str(e)}")
 
 @app.get("/health")
 async def health_check():
     try:
+        await EXCHANGE.fetch_ticker('BTC/USDT')
+        log.info("Health check passed")
         return {"status": "healthy", "timestamp": str(datetime.utcnow())}
     except Exception as e:
         log.error(f"Health check failed: {str(e)}")
-        return {"status": "unhealthy", "error": str(e)}, 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
