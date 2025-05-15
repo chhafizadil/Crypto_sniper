@@ -19,23 +19,23 @@ import os
 # Load .env file
 load_dotenv()
 
-# Access variables with new names
+# Access variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MIN_VOLUME = int(os.getenv("MIN_VOLUME", 1000000))
-SYMBOL_LIMIT = int(os.getenv("SYMBOL_LIMIT", 150))  # As requested
+SYMBOL_LIMIT = int(os.getenv("SYMBOL_LIMIT", 150))
 FORCE_UPDATE = os.getenv("FORCE_UPDATE", "23")
-CONFIDENCE_THRESHOLD = float(os.getenv("MIN_CONFIDENCE", 60.0))  # As requested
+CONFIDENCE_THRESHOLD = float(os.getenv("MIN_CONFIDENCE", 60.0))
 
 # Log TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID status
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    logging.error(f"TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. TELEGRAM_BOT_TOKEN: {TELEGRAM_BOT_TOKEN}, TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
+    logging.error(f"TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set.")
     raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
 else:
-    logging.info(f"TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID loaded successfully: TELEGRAM_BOT_TOKEN={TELEGRAM_BOT_TOKEN[:10]}..., TELEGRAM_CHAT_ID={TELEGRAM_CHAT_ID}")
+    logging.info(f"TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID loaded successfully.")
 
 logging.basicConfig(
-    level=logging.ERROR,  # Changed to ERROR for memory optimization
+    level=logging.ERROR,  # ERROR for memory optimization
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
     handlers=[
         logging.FileHandler('logs/bot.log'),
@@ -47,9 +47,7 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT=50
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
-MIN_VOLUME = 100000
 COOLDOWN_PERIOD = 21600  # 6 hours
 predictor = SignalPredictor()
 
@@ -87,7 +85,7 @@ async def process_symbol(symbol: str):
             if signal["confidence"] >= CONFIDENCE_THRESHOLD:
                 signal["timestamp"] = datetime.now()
                 signal["trade_type"] = "Scalping"
-                log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600:.1f} hours across all timeframes")
+                log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600:.1f} hours")
                 cooldowns[symbol] = datetime.now() + timedelta(seconds=COOLDOWN_PERIOD)
                 await send_telegram_signal(symbol, signal, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
             else:
@@ -122,8 +120,8 @@ async def run_scanner():
             symbols = await fetch_symbols()
             for symbol in symbols:
                 await process_symbol(symbol)
-                await asyncio.sleep(300)  # Increased to 300 for memory optimization
-            await asyncio.sleep(900)  # Increased to 900 for memory optimization
+                await asyncio.sleep(300)  # For memory optimization
+            await asyncio.sleep(900)  # For memory optimization
         except Exception as e:
             log.error(f"Error in scanner loop: {e}")
             await asyncio.sleep(900)
