@@ -4,7 +4,6 @@ from typing import Dict, Optional
 from utils.logger import logger
 import ta
 import ccxt.async_support as ccxt
-from datetime import datetime
 
 class SignalPredictor:
     def __init__(self):
@@ -70,18 +69,18 @@ class SignalPredictor:
                 return None
 
             long_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] < 45,  # Relaxed RSI condition
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.05,
+                pd.notna(latest['rsi']) and latest['rsi'] < 50,  # Relaxed RSI
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'],
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
             ]
             short_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] > 55,  # Relaxed RSI condition
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9,
+                pd.notna(latest['rsi']) and latest['rsi'] > 50,  # Relaxed RSI
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'],
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal']
             ]
 
-            long_confidence = sum([30 if i < 2 else 40 for i, cond in enumerate(long_conditions) if cond])
-            short_confidence = sum([30 if i < 2 else 40 for i, cond in enumerate(short_conditions) if cond])
+            long_confidence = sum([25 if i < 2 else 50 for i, cond in enumerate(long_conditions) if cond])
+            short_confidence = sum([25 if i < 2 else 50 for i, cond in enumerate(short_conditions) if cond])
 
             direction = None
             confidence = 0
@@ -91,8 +90,8 @@ class SignalPredictor:
                 direction = "LONG"
                 confidence = long_confidence
                 conditions_met = [
-                    "rsi < 45" if long_conditions[0] else "",
-                    "volume > volume_sma_20 * 1.05" if long_conditions[1] else "",
+                    "rsi < 50" if long_conditions[0] else "",
+                    "volume > volume_sma_20" if long_conditions[1] else "",
                     "macd > macd_signal" if long_conditions[2] else ""
                 ]
                 conditions_met = [c for c in conditions_met if c]
@@ -100,18 +99,18 @@ class SignalPredictor:
                 direction = "SHORT"
                 confidence = short_confidence
                 conditions_met = [
-                    "rsi > 55" if short_conditions[0] else "",
-                    "volume < volume_sma_20 * 0.9" if short_conditions[1] else "",
+                    "rsi > 50" if short_conditions[0] else "",
+                    "volume < volume_sma_20" if short_conditions[1] else "",
                     "macd < macd_signal" if short_conditions[2] else ""
                 ]
                 conditions_met = [c for c in conditions_met if c]
 
             if direction:
                 current_price = latest['close']
-                atr = max(latest['atr'], current_price * 0.001)
-                tp1_possibility = 0.75 + confidence / 500
-                tp2_possibility = 0.60 + confidence / 600
-                tp3_possibility = 0.45 + confidence / 700
+                atr = max(latest['atr'], current_price * 0.005)  # Fixed entry == TP1 issue
+                tp1_possibility = 0.80
+                tp2_possibility = 0.65
+                tp3_possibility = 0.50
                 signal = {
                     "symbol": symbol,
                     "direction": direction,
@@ -122,7 +121,7 @@ class SignalPredictor:
                     "tp1": round(current_price + atr * 1.5, 2) if direction == "LONG" else round(current_price - atr * 1.5, 2),
                     "tp2": round(current_price + atr * 2.5, 2) if direction == "LONG" else round(current_price - atr * 2.5, 2),
                     "tp3": round(current_price + atr * 4.0, 2) if direction == "LONG" else round(current_price - atr * 4.0, 2),
-                    "sl": round(current_price - atr * 1.0, 2) if direction == "LONG" else round(current_price - atr * 1.0, 2),
+                    "sl": round(current_price - atr * 1.0, 2) if direction == "LONG" else round(current_price + atr * 1.0, 2),
                     "tp1_possibility": tp1_possibility,
                     "tp2_possibility": tp2_possibility,
                     "tp3_possibility": tp3_possibility,
