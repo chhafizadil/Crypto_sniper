@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import httpx
 import schedule
 import time
+import psutil
 from dotenv import load_dotenv
 import os
 
@@ -34,7 +35,7 @@ else:
     logging.info(f"TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID loaded successfully: TELEGRAM_BOT_TOKEN={TELEGRAM_BOT_TOKEN[:10]}..., TELEGRAM_CHAT_ID={TELEGRAM_CHAT_ID}")
 
 logging.basicConfig(
-    level=logging.WARNING,  # Reduced logging for Koyeb memory optimization
+    level=logging.ERROR,  # Changed to ERROR for memory optimization
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
     handlers=[
         logging.FileHandler('logs/bot.log'),
@@ -88,7 +89,7 @@ async def process_symbol(symbol: str):
                 signal["trade_type"] = "Scalping"
                 log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600:.1f} hours across all timeframes")
                 cooldowns[symbol] = datetime.now() + timedelta(seconds=COOLDOWN_PERIOD)
-                await send_telegram_signal(symbol, signal, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)  # Pass new names
+                await send_telegram_signal(symbol, signal, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
             else:
                 log.info(f"⚠️ {symbol} - No signal with sufficient confidence")
         else:
@@ -121,11 +122,11 @@ async def run_scanner():
             symbols = await fetch_symbols()
             for symbol in symbols:
                 await process_symbol(symbol)
-                await asyncio.sleep(200)  # Increased delay for Koyeb memory optimization
-            await asyncio.sleep(600)  # Increased loop delay
+                await asyncio.sleep(300)  # Increased to 300 for memory optimization
+            await asyncio.sleep(900)  # Increased to 900 for memory optimization
         except Exception as e:
             log.error(f"Error in scanner loop: {e}")
-            await asyncio.sleep(600)
+            await asyncio.sleep(900)
 
 @app.on_event("startup")
 async def startup_event():
@@ -133,4 +134,7 @@ async def startup_event():
 
 @app.get("/health")
 async def health_check():
+    memory = psutil.virtual_memory()
+    if memory.percent > 85:
+        return {"status": "unhealthy", "memory_usage": memory.percent}
     return {"status": "healthy"}
