@@ -18,21 +18,23 @@ import os
 # Load .env file
 load_dotenv()
 
-# Access variables
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-MIN_VOLUME = int(os.getenv("MIN_VOLUME", 3000000))
-SYMBOL_LIMIT = int(os.getenv("SYMBOL_LIMIT", 100))  # Reduced for free plan
+# Access variables with new names
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+MIN_VOLUME = int(os.getenv("MIN_VOLUME", 1000000))
+SYMBOL_LIMIT = int(os.getenv("SYMBOL_LIMIT", 150))  # As requested
 FORCE_UPDATE = os.getenv("FORCE_UPDATE", "23")
+CONFIDENCE_THRESHOLD = float(os.getenv("MIN_CONFIDENCE", 60.0))  # As requested
 
-# Log BOT_TOKEN and CHAT_ID status
-if not BOT_TOKEN or not CHAT_ID:
-    logging.error(f"BOT_TOKEN or CHAT_ID not set. BOT_TOKEN: {BOT_TOKEN}, CHAT_ID: {CHAT_ID}")
+# Log TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID status
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    logging.error(f"TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. TELEGRAM_BOT_TOKEN: {TELEGRAM_BOT_TOKEN}, TELEGRAM_CHAT_ID: {TELEGRAM_CHAT_ID}")
+    raise ValueError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
 else:
-    logging.info("BOT_TOKEN and CHAT_ID loaded successfully")
+    logging.info(f"TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID loaded successfully: TELEGRAM_BOT_TOKEN={TELEGRAM_BOT_TOKEN[:10]}..., TELEGRAM_CHAT_ID={TELEGRAM_CHAT_ID}")
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Reduced logging for Koyeb memory optimization
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
     handlers=[
         logging.FileHandler('logs/bot.log'),
@@ -44,10 +46,8 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 100000
-CONFIDENCE_THRESHOLD = 50.0  # Restored to previous value
 COOLDOWN_PERIOD = 21600  # 6 hours
 predictor = SignalPredictor()
 
@@ -78,10 +78,6 @@ async def process_symbol(symbol: str):
             log.info(f"[{symbol}] On cooldown until {cooldowns[symbol]}")
             return
 
-        log.info(f"[{symbol}] Checking for cooldown")
-        if symbol in cooldowns and cooldowns[symbol] > datetime.now():
-            return
-
         log.info(f"[{symbol}] Starting multi-timeframe analysis")
         result = await analyze_symbol_multi_timeframe(EXCHANGE, symbol, TIMEFRAMES, predictor)
         if result and result.get("signals"):
@@ -91,7 +87,7 @@ async def process_symbol(symbol: str):
                 signal["trade_type"] = "Scalping"
                 log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600:.1f} hours across all timeframes")
                 cooldowns[symbol] = datetime.now() + timedelta(seconds=COOLDOWN_PERIOD)
-                await send_telegram_signal(symbol, signal)
+                await send_telegram_signal(symbol, signal, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)  # Pass new names
             else:
                 log.info(f"⚠️ {symbol} - No signal with sufficient confidence")
         else:
@@ -124,11 +120,11 @@ async def run_scanner():
             symbols = await fetch_symbols()
             for symbol in symbols:
                 await process_symbol(symbol)
-                await asyncio.sleep(100)  # Increased delay for free plan
-            await asyncio.sleep(300)
+                await asyncio.sleep(200)  # Increased delay for Koyeb memory optimization
+            await asyncio.sleep(600)  # Increased loop delay
         except Exception as e:
             log.error(f"Error in scanner loop: {e}")
-            await asyncio.sleep(300)
+            await asyncio.sleep(600)
 
 @app.on_event("startup")
 async def startup_event():
