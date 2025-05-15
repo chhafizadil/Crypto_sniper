@@ -69,12 +69,12 @@ class SignalPredictor:
                 return None
 
             long_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] < 50,  # Relaxed RSI
+                pd.notna(latest['rsi']) and latest['rsi'] < 50,
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'],
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
             ]
             short_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] > 50,  # Relaxed RSI
+                pd.notna(latest['rsi']) and latest['rsi'] > 50,
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'],
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal']
             ]
@@ -107,21 +107,33 @@ class SignalPredictor:
 
             if direction:
                 current_price = latest['close']
-                atr = max(latest['atr'], current_price * 0.005)  # Fixed entry == TP1 issue
+                atr = max(latest['atr'], current_price * 0.005)
+                min_diff = 0.0001  # Minimum difference for small prices
+                multiplier = 2.0  # Increased for better TP separation
                 tp1_possibility = 0.80
                 tp2_possibility = 0.65
                 tp3_possibility = 0.50
+                if direction == "LONG":
+                    tp1 = round(current_price + max(atr * multiplier, min_diff), 8)
+                    tp2 = round(tp1 + max(atr * 0.5, min_diff), 8)
+                    tp3 = round(tp2 + max(atr * 0.5, min_diff), 8)
+                    sl = round(current_price - max(atr * 1.5, min_diff), 8)
+                else:  # SHORT
+                    tp1 = round(current_price - max(atr * multiplier, min_diff), 8)
+                    tp2 = round(tp1 - max(atr * 0.5, min_diff), 8)
+                    tp3 = round(tp2 - max(atr * 0.5, min_diff), 8)
+                    sl = round(current_price + max(atr * 1.5, min_diff), 8)
                 signal = {
                     "symbol": symbol,
                     "direction": direction,
-                    "entry": round(current_price, 2),
+                    "entry": round(current_price, 8),
                     "confidence": min(confidence, 100),
                     "timeframe": timeframe,
                     "conditions": conditions_met,
-                    "tp1": round(current_price + atr * 1.5, 2) if direction == "LONG" else round(current_price - atr * 1.5, 2),
-                    "tp2": round(current_price + atr * 2.5, 2) if direction == "LONG" else round(current_price - atr * 2.5, 2),
-                    "tp3": round(current_price + atr * 4.0, 2) if direction == "LONG" else round(current_price - atr * 4.0, 2),
-                    "sl": round(current_price - atr * 1.0, 2) if direction == "LONG" else round(current_price + atr * 1.0, 2),
+                    "tp1": tp1,
+                    "tp2": tp2,
+                    "tp3": tp3,
+                    "sl": sl,
                     "tp1_possibility": tp1_possibility,
                     "tp2_possibility": tp2_possibility,
                     "tp3_possibility": tp3_possibility,
@@ -129,12 +141,14 @@ class SignalPredictor:
                     "status": "pending",
                     "hit_timestamp": None
                 }
+                if signal['tp1'] == signal['entry']:
+                    logger.warning(f"[{symbol}] TP1 ({signal['tp1']}) and Entry ({signal['entry']}) are the same, check ATR or rounding")
                 logger.info(
                     f"[{symbol}] Signal for {timeframe}: {direction}, Confidence: {confidence:.2f}%, "
-                    f"TP1: {signal['tp1']:.2f} ({signal['tp1_possibility']*100:.0f}%), "
-                    f"TP2: {signal['tp2']:.2f} ({signal['tp2_possibility']*100:.0f}%), "
-                    f"TP3: {signal['tp3']:.2f} ({signal['tp3_possibility']*100:.0f}%), "
-                    f"SL: {signal['sl']:.2f}"
+                    f"TP1: {signal['tp1']:.8f} ({signal['tp1_possibility']*100:.0f}%), "
+                    f"TP2: {signal['tp2']:.8f} ({signal['tp2_possibility']*100:.0f}%), "
+                    f"TP3: {signal['tp3']:.8f} ({signal['tp3_possibility']*100:.0f}%), "
+                    f"SL: {signal['sl']:.8f}"
                 )
                 return signal
             logger.info(f"[{symbol}] No signal for {timeframe}")
