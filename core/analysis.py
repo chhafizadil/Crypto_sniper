@@ -46,9 +46,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 signal = await predictor.predict_signal(symbol, df, timeframe)
                 if signal:
                     signals.append(signal)
-                    logger.info(f"[{symbol}] Signal for {timeframe}: {signal['direction']}, Confidence: {signal['confidence']:.2f}%")
-                else:
-                    logger.info(f"[{symbol}] No signal for {timeframe}")
+                # لاگنگ اب صرف predict_signal سے ہوگی
             except Exception as e:
                 logger.error(f"[{symbol}] Error in analysis for {timeframe}: {str(e)}")
                 continue
@@ -58,7 +56,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             return None
 
         timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.33:
+        if timeframe_agreement < 0.25:
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
             return None
 
