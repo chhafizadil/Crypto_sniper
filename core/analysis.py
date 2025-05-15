@@ -58,7 +58,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             return None
 
         timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.50:
+        if timeframe_agreement < 0.33:
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
             return None
 
