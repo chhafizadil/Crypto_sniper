@@ -11,7 +11,7 @@ async def send_telegram_signal(symbol: str, signal: dict):
     try:
         if not BOT_TOKEN or not CHAT_ID:
             logger.error(f"[{symbol}] BOT_TOKEN or CHAT_ID not set. BOT_TOKEN: {BOT_TOKEN}, CHAT_ID: {CHAT_ID}")
-            return
+            return False
 
         entry = signal.get("entry", "0")
         tp1 = signal.get("tp1", "0")
@@ -23,9 +23,9 @@ async def send_telegram_signal(symbol: str, signal: dict):
         timeframe = signal.get("timeframe", "Unknown")
         trade_type = signal.get("trade_type", "Scalping")
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
-        tp1_possibility = signal.get("tp1_possibility", 0.70) * 100
-        tp2_possibility = signal.get("tp2_possibility", 0.50) * 100
-        tp3_possibility = signal.get("tp3_possibility", 0.35) * 100
+        tp1_possibility = signal.get("tp1_possibility", 0.75) * 100
+        tp2_possibility = signal.get("tp2_possibility", 0.60) * 100
+        tp3_possibility = signal.get("tp3_possibility", 0.45) * 100
 
         if entry == tp1:
             logger.warning(f"[{symbol}] TP1 ({tp1}) and Entry ({entry}) are the same, check ATR or rounding")
@@ -46,7 +46,7 @@ async def send_telegram_signal(symbol: str, signal: dict):
 
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         async with httpx.AsyncClient() as client:
-            for attempt in range(5):
+            for attempt in range(6):
                 try:
                     payload = {
                         "chat_id": CHAT_ID,
@@ -56,12 +56,35 @@ async def send_telegram_signal(symbol: str, signal: dict):
                     response = await client.post(url, json=payload)
                     if response.status_code == 200:
                         logger.info(f"[{symbol}] Telegram signal sent successfully")
-                        return
+                        # Save to CSV
+                        signal_data = {
+                            "timestamp": timestamp,
+                            "symbol": symbol,
+                            "direction": direction,
+                            "entry": entry,
+                            "tp1": tp1,
+                            "tp2": tp2,
+                            "tp3": tp3,
+                            "sl": sl,
+                            "confidence": confidence,
+                            "timeframe": timeframe,
+                            "trade_type": trade_type
+                        }
+                        df = pd.DataFrame([signal_data])
+                        csv_path = "logs/signals_log_new.csv"
+                        try:
+                            df.to_csv(csv_path, mode='a', header=not os.path.exists(csv_path), index=False)
+                            logger.info(f"[{symbol}] Signal logged to {csv_path}")
+                        except Exception as e:
+                            logger.error(f"[{symbol}] Error logging signal to CSV: {e}")
+                        return True
                     else:
                         logger.error(f"[{symbol}] Failed to send Telegram signal: {response.text}")
                 except Exception as e:
-                    logger.error(f"[{symbol}] Error sending Telegram signal: {e}")
-                await asyncio.sleep(5)
-            logger.error(f"[{symbol}] Failed to send Telegram signal after 5 attempts")
+                    logger.error(f"[{symbol}] Error sending Telegram signal (attempt {attempt + 1}): {e}")
+                await asyncio.sleep(6)
+            logger.error(f"[{symbol}] Failed to send Telegram signal after 6 attempts")
+            return False
     except Exception as e:
         logger.error(f"[{symbol}] Error in send_telegram_signal: {e}")
+        return False
