@@ -46,6 +46,7 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
+SYMBOL_LIMIT=50
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 100000
 COOLDOWN_PERIOD = 21600  # 6 hours
