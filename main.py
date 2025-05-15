@@ -44,8 +44,10 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
+SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
-CONFIDENCE_THRESHOLD = 70.0  # Restored to previous value
+MIN_VOLUME = 1000000
+CONFIDENCE_THRESHOLD = 60.0  # Restored to previous value
 COOLDOWN_PERIOD = 21600  # 6 hours
 predictor = SignalPredictor()
 
