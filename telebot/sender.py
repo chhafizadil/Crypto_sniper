@@ -4,13 +4,10 @@ import pandas as pd
 from utils.logger import logger
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-
-async def send_telegram_signal(symbol: str, signal: dict):
+async def send_telegram_signal(symbol: str, signal: dict, telegram_bot_token: str, telegram_chat_id: str):
     try:
-        if not BOT_TOKEN or not CHAT_ID:
-            logger.error(f"[{symbol}] BOT_TOKEN or CHAT_ID not set. BOT_TOKEN: {BOT_TOKEN}, CHAT_ID: {CHAT_ID}")
+        if not telegram_bot_token or not telegram_chat_id:
+            logger.error(f"[{symbol}] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set. TELEGRAM_BOT_TOKEN: {telegram_bot_token}, TELEGRAM_CHAT_ID: {telegram_chat_id}")
             return False
 
         entry = signal.get("entry", "0")
@@ -44,12 +41,12 @@ async def send_telegram_signal(symbol: str, signal: dict):
             f"🕒 *Timestamp*: {timestamp}"
         )
 
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{telegram_bot_token}/sendMessage"
         async with httpx.AsyncClient() as client:
             for attempt in range(5):
                 try:
                     payload = {
-                        "chat_id": CHAT_ID,
+                        "chat_id": telegram_chat_id,
                         "text": message,
                         "parse_mode": "Markdown"
                     }
