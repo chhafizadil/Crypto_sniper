@@ -23,9 +23,9 @@ async def send_telegram_signal(symbol: str, signal: dict):
         timeframe = signal.get("timeframe", "Unknown")
         trade_type = signal.get("trade_type", "Scalping")
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
-        tp1_possibility = signal.get("tp1_possibility", 0.75) * 100
-        tp2_possibility = signal.get("tp2_possibility", 0.60) * 100
-        tp3_possibility = signal.get("tp3_possibility", 0.45) * 100
+        tp1_possibility = signal.get("tp1_possibility", 0.80) * 100
+        tp2_possibility = signal.get("tp2_possibility", 0.65) * 100
+        tp3_possibility = signal.get("tp3_possibility", 0.50) * 100
 
         if entry == tp1:
             logger.warning(f"[{symbol}] TP1 ({tp1}) and Entry ({entry}) are the same, check ATR or rounding")
@@ -46,7 +46,7 @@ async def send_telegram_signal(symbol: str, signal: dict):
 
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         async with httpx.AsyncClient() as client:
-            for attempt in range(6):
+            for attempt in range(5):
                 try:
                     payload = {
                         "chat_id": CHAT_ID,
@@ -82,8 +82,8 @@ async def send_telegram_signal(symbol: str, signal: dict):
                         logger.error(f"[{symbol}] Failed to send Telegram signal: {response.text}")
                 except Exception as e:
                     logger.error(f"[{symbol}] Error sending Telegram signal (attempt {attempt + 1}): {e}")
-                await asyncio.sleep(6)
-            logger.error(f"[{symbol}] Failed to send Telegram signal after 6 attempts")
+                await asyncio.sleep(5)
+            logger.error(f"[{symbol}] Failed to send Telegram signal after 5 attempts")
             return False
     except Exception as e:
         logger.error(f"[{symbol}] Error in send_telegram_signal: {e}")
