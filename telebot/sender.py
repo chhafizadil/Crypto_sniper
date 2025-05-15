@@ -2,12 +2,17 @@ import httpx
 import asyncio
 import pandas as pd
 from utils.logger import logger
+import os
 
-BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
-CHAT_ID = "-4694205383"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 async def send_telegram_signal(symbol: str, signal: dict):
     try:
+        if not BOT_TOKEN or not CHAT_ID:
+            logger.error(f"[{symbol}] BOT_TOKEN or CHAT_ID not set. BOT_TOKEN: {BOT_TOKEN}, CHAT_ID: {CHAT_ID}")
+            return
+
         entry = signal.get("entry", "0")
         tp1 = signal.get("tp1", "0")
         tp2 = signal.get("tp2", "0")
@@ -41,7 +46,7 @@ async def send_telegram_signal(symbol: str, signal: dict):
 
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         async with httpx.AsyncClient() as client:
-            for attempt in range(3):
+            for attempt in range(5):
                 try:
                     payload = {
                         "chat_id": CHAT_ID,
@@ -50,12 +55,13 @@ async def send_telegram_signal(symbol: str, signal: dict):
                     }
                     response = await client.post(url, json=payload)
                     if response.status_code == 200:
-                        logger.info(f"Telegram signal sent for {symbol}")
+                        logger.info(f"[{symbol}] Telegram signal sent successfully")
                         return
                     else:
-                        logger.error(f"Failed to send Telegram signal: {response.text}")
+                        logger.error(f"[{symbol}] Failed to send Telegram signal: {response.text}")
                 except Exception as e:
-                    logger.error(f"Error sending Telegram signal: {e}")
-                await asyncio.sleep(10)
+                    logger.error(f"[{symbol}] Error sending Telegram signal: {e}")
+                await asyncio.sleep(5)
+            logger.error(f"[{symbol}] Failed to send Telegram signal after 5 attempts")
     except Exception as e:
-        logger.error(f"Error in send_telegram_signal: {e}")
+        logger.error(f"[{symbol}] Error in send_telegram_signal: {e}")
