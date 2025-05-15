@@ -2,14 +2,12 @@ import httpx
 import asyncio
 import pandas as pd
 from utils.logger import logger
-from utils.helpers import format_price
 
 BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
 CHAT_ID = "-4694205383"
 
 async def send_telegram_signal(symbol: str, signal: dict):
     try:
-        # Check if message field exists (e.g., for daily summaries)
         if "message" in signal:
             message = signal["message"]
         else:
@@ -58,9 +56,9 @@ async def send_telegram_signal(symbol: str, signal: dict):
                         logger.info(f"Telegram signal sent for {symbol}")
                         return
                     else:
-                        logger.error(f"Failed to send Telegram signal: {response.text}")
+                        logger.error(f"Failed to send Telegram signal for {symbol}: Status {response.status_code}, {response.text}")
                 except Exception as e:
-                    logger.error(f"Error sending Telegram signal: {e}")
-                await asyncio.sleep(10)
+                    logger.error(f"Error sending Telegram signal for {symbol}: {str(e)}")
+                await asyncio.sleep(5)
     except Exception as e:
-        logger.error(f"Error in send_telegram_signal: {e}")
+        logger.error(f"Error in send_telegram_signal for {symbol}: {str(e)}")
