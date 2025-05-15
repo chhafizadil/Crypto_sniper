@@ -108,8 +108,8 @@ class SignalPredictor:
             if direction:
                 current_price = latest['close']
                 atr = max(latest['atr'], current_price * 0.005)
-                min_diff = 0.0001  # Minimum difference for small prices
-                multiplier = 2.0  # Increased for better TP separation
+                min_diff = 0.0001
+                multiplier = 2.0
                 tp1_possibility = 0.80
                 tp2_possibility = 0.65
                 tp3_possibility = 0.50
@@ -142,7 +142,7 @@ class SignalPredictor:
                     "hit_timestamp": None
                 }
                 if signal['tp1'] == signal['entry']:
-                    logger.warning(f"[{symbol}] TP1 ({signal['tp1']}) and Entry ({signal['entry']}) are the same, check ATR or rounding")
+                    logger.warning(f"[{symbol}] TP1 ({signal['tp1']}) and Entry ({signal['entry']}) are the same")
                 logger.info(
                     f"[{symbol}] Signal for {timeframe}: {direction}, Confidence: {confidence:.2f}%, "
                     f"TP1: {signal['tp1']:.8f} ({signal['tp1_possibility']*100:.0f}%), "
