@@ -70,18 +70,18 @@ class SignalPredictor:
                 return None
 
             long_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] < 38,
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.2,
+                pd.notna(latest['rsi']) and latest['rsi'] < 40,
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'] * 1.1,
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
             ]
             short_conditions = [
-                pd.notna(latest['rsi']) and latest['rsi'] > 65,
-                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.9,
+                pd.notna(latest['rsi']) and latest['rsi'] > 60,
+                pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'] * 0.8,
                 pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal']
             ]
 
-            long_confidence = sum([35 if i < 2 else 30 for i, cond in enumerate(long_conditions) if cond])
-            short_confidence = sum([35 if i < 2 else 30 for i, cond in enumerate(short_conditions) if cond])
+            long_confidence = sum([40 if i < 2 else 20 for i, cond in enumerate(long_conditions) if cond])
+            short_confidence = sum([40 if i < 2 else 20 for i, cond in enumerate(short_conditions) if cond])
 
             direction = None
             confidence = 0
@@ -91,8 +91,8 @@ class SignalPredictor:
                 direction = "LONG"
                 confidence = long_confidence
                 conditions_met = [
-                    "rsi < 38" if long_conditions[0] else "",
-                    "volume > volume_sma_20 * 1.2" if long_conditions[1] else "",
+                    "rsi < 40" if long_conditions[0] else "",
+                    "volume > volume_sma_20 * 1.1" if long_conditions[1] else "",
                     "macd > macd_signal"
                 ]
                 conditions_met = [c for c in conditions_met if c]
@@ -100,8 +100,8 @@ class SignalPredictor:
                 direction = "SHORT"
                 confidence = short_confidence
                 conditions_met = [
-                    "rsi > 65" if short_conditions[0] else "",
-                    "volume < volume_sma_20 * 0.9" if short_conditions[1] else "",
+                    "rsi > 60" if short_conditions[0] else "",
+                    "volume < volume_sma_20 * 0.8" if short_conditions[1] else "",
                     "macd < macd_signal"
                 ]
                 conditions_met = [c for c in conditions_met if c]
@@ -109,9 +109,9 @@ class SignalPredictor:
             if direction:
                 current_price = latest['close']
                 atr = max(latest['atr'], current_price * 0.001)
-                tp1_possibility = 0.65 + confidence / 400
-                tp2_possibility = 0.50 + confidence / 500
-                tp3_possibility = 0.35 + confidence / 600
+                tp1_possibility = 0.70 + confidence / 400
+                tp2_possibility = 0.55 + confidence / 500
+                tp3_possibility = 0.40 + confidence / 600
                 signal = {
                     "symbol": symbol,
                     "direction": direction,
@@ -138,6 +138,7 @@ class SignalPredictor:
                     f"SL: {signal['sl']:.2f}"
                 )
                 return signal
+            logger.info(f"[{symbol}] No signal for {timeframe}")
             return None
         except Exception as e:
             logger.error(f"[{symbol}] Error predicting signal for {timeframe}: {str(e)}")
