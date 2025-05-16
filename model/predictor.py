@@ -31,7 +31,7 @@ class SignalPredictor:
             logger.error(f"Error calculating indicators: {str(e)}")
             return df
 
-    async def check_signal_status(self, symbol: str, signal: Dict) -> str:
+    async def check_signal_status(self, symbole: str, signal: Dict) -> str:
         try:
             ticker = await self.exchange.fetch_ticker(symbol)
             current_price = ticker['last']
@@ -109,7 +109,7 @@ class SignalPredictor:
             if direction:
                 current_price = latest['close']
                 atr = max(latest['atr'], current_price * 0.005)
-                min_diff = 0.001
+                min_diff = 0.002
                 multiplier = 2.0
                 tp1_possibility = 0.80
                 tp2_possibility = 0.65
