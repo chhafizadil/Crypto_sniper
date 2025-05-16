@@ -29,11 +29,11 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 300
+SYMBOL_LIMIT = 200  # اپ ڈیٹ: 200 coins
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
-MIN_VOLUME = 1000000
+MIN_VOLUME = 1000000  # اپ ڈیٹ: 1 million
 CONFIDENCE_THRESHOLD = 70.0
-COOLDOWN_PERIOD = 21600
+COOLDOWN_PERIOD = 21600  # 6 گھنٹے
 BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
 CHAT_ID = "-4694205383"
 
@@ -58,7 +58,7 @@ async def send_telegram_message(chat_id: str, text: str):
 async def delete_webhook(max_retries: int = 5):
     for attempt in range(max_retries):
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 # Webhook ہٹائیں اور پینڈنگ اپ ڈیٹس صاف کریں
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
                 response = await client.get(url)
@@ -67,11 +67,15 @@ async def delete_webhook(max_retries: int = 5):
                     # Webhook سٹیٹس چیک کریں
                     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
                     response = await client.get(url)
-                    if response.status_code == 200 and response.json().get("result", {}).get("url") == "":
-                        log.info("Webhook confirmed deleted")
-                        return True
+                    if response.status_code == 200:
+                        webhook_info = response.json().get("result", {})
+                        if webhook_info.get("url") == "" and webhook_info.get("pending_update_count", 0) == 0:
+                            log.info("Webhook confirmed deleted with no pending updates")
+                            return True
+                        else:
+                            log.warning(f"Webhook not fully cleared: url={webhook_info.get('url')}, pending_updates={webhook_info.get('pending_update_count')}")
                     else:
-                        log.warning(f"Webhook still active: {response.json().get('result', {}).get('url')}")
+                        log.error(f"Failed to fetch webhook info: {response.text}")
                 else:
                     log.error(f"Failed to delete Telegram webhook: {response.text}")
         except Exception as e:
@@ -121,6 +125,7 @@ async def save_signal_to_csv(signal: Dict):
 async def process_symbol(symbol: str):
     log.info(f"[{symbol}] Checking for cooldown")
     
+    # ہر ٹائم فریم سے پہلے cooldown چیک کرو
     if symbol in cooldowns:
         cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
         if datetime.utcnow() < cooldown_end:
@@ -146,6 +151,13 @@ async def process_symbol(symbol: str):
     if result and 'signals' in result and result['signals']:
         best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
         if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
+            # دوبارہ cooldown چیک کرو سگنل بھیجنے سے پہلے
+            if symbol in cooldowns:
+                cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
+                if datetime.utcnow() < cooldown_end:
+                    log.info(f"[{symbol}] Signal skipped due to cooldown until {cooldown_end}")
+                    return
+            
             cooldowns[symbol] = datetime.utcnow()
             log.info(f"[{symbol}] Added to cooldown for all timeframes for {COOLDOWN_PERIOD/3600} hours")
             
@@ -298,15 +310,24 @@ async def run_scanner():
         log.error(f"Error in scanner: {str(e)}")
         await asyncio.sleep(3600)
 
-async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
+async def run_telegram_polling(telegram_app: Application, max_retries: int = 10):
     for attempt in range(max_retries):
         try:
-            # Webhook ہٹانے کی کوشش
+            # Webhook ہٹانے کی کوشش، پینڈنگ اپ ڈیٹس صاف کرو
             if not await delete_webhook():
                 log.error("Failed to delete webhook, retrying...")
-                await asyncio.sleep(2)
+                await asyncio.sleep(2 ** attempt)
                 continue
-            await asyncio.sleep(1)  # Webhook صاف ہونے کا انتظار
+            # getUpdates کے ذریعے پینڈنگ اپ ڈیٹس صاف کرو
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
+                response = await client.get(url)
+                if response.status_code == 200 and response.json().get("ok"):
+                    log.info("Pending updates cleared via getUpdates")
+                else:
+                    log.warning(f"Failed to clear pending updates: {response.text}")
+            
+            await asyncio.sleep(2)  # Webhook اور اپ ڈیٹس صاف ہونے کا انتظار
             await telegram_app.initialize()
             await telegram_app.start()
             await telegram_app.updater.start_polling(
@@ -319,8 +340,15 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
             return
         except Conflict as e:
             log.error(f"Polling conflict (attempt {attempt + 1}/{max_retries}): {str(e)}")
-            # Webhook دوبارہ ہٹانے کی کوشش
+            # Webhook اور اپ ڈیٹس دوبارہ صاف کرو
             await delete_webhook()
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
+                response = await client.get(url)
+                if response.status_code == 200:
+                    log.info("Pending updates cleared during conflict retry")
+                else:
+                    log.warning(f"Failed to clear updates during conflict: {response.text}")
             await telegram_app.stop()
             await telegram_app.shutdown()
             await asyncio.sleep(5 * (attempt + 1))
@@ -328,7 +356,7 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
             log.error(f"Error in Telegram polling (attempt {attempt + 1}/{max_retries}): {str(e)}")
             await telegram_app.stop()
             await telegram_app.shutdown()
-            await asyncio.sleep(5)
+            await asyncio.sleep(5 * (attempt + 1))
     log.error("Failed to start Telegram polling after maximum retries")
     raise RuntimeError("Could not start Telegram polling")
 
