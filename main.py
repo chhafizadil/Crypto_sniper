@@ -26,7 +26,7 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 150
+SYMBOL_LIMIT = 120  # Reduced to avoid memory issues
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 10000000
 CONFIDENCE_THRESHOLD = 70.0
@@ -38,6 +38,18 @@ predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
 
 cooldowns: Dict[str, datetime] = {}
+
+async def delete_webhook():
+    try:
+        async with httpx.AsyncClient() as client:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+            response = await client.get(url)
+            if response.status_code == 200 and response.json().get("ok"):
+                log.info("Telegram webhook deleted successfully")
+            else:
+                log.error(f"Failed to delete Telegram webhook: {response.text}")
+    except Exception as e:
+        log.error(f"Error deleting Telegram webhook: {str(e)}")
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
     for attempt in range(3):
@@ -123,6 +135,7 @@ async def process_symbol(symbol: str):
 async def handle_telegram_updates():
     last_update_id = 0
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    await delete_webhook()  # Delete webhook on startup
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -185,6 +198,7 @@ async def startup_event():
     try:
         await EXCHANGE.load_markets()
         log.info("Binance API connection successful")
+        await delete_webhook()  # Ensure webhook is deleted on startup
         asyncio.create_task(run_scanner())
         asyncio.create_task(handle_telegram_updates())
     except Exception as e:
