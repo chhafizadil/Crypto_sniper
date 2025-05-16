@@ -18,7 +18,9 @@ async def generate_daily_summary():
             logger.warning("Signals log is empty")
             return
 
-        today = datetime.now().strftime('%Y-%m-%d')
+        import pytz
+        today = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
+
         today_signals = df[df['timestamp'].str.startswith(today)]
         
         if today_signals.empty:
