@@ -304,7 +304,7 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
             # Webhook ہٹانے کی کوشش
             if not await delete_webhook():
                 log.error("Failed to delete webhook, retrying...")
-                await asyncio.sleep(2 **asaki attempt)
+                await asyncio.sleep(2)
                 continue
             await asyncio.sleep(1)  # Webhook صاف ہونے کا انتظار
             await telegram_app.initialize()
