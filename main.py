@@ -14,6 +14,7 @@ import psutil
 import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.error import Conflict
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,17 +55,22 @@ async def send_telegram_message(chat_id: str, text: str):
     except Exception as e:
         log.error(f"Error sending Telegram message: {str(e)}")
 
-async def delete_webhook():
-    try:
-        async with httpx.AsyncClient() as client:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
-            response = await client.get(url)
-            if response.status_code == 200 and response.json().get("ok"):
-                log.info("Telegram webhook deleted successfully")
-            else:
-                log.error(f"Failed to delete Telegram webhook: {response.text}")
-    except Exception as e:
-        log.error(f"Error deleting Telegram webhook: {str(e)}")
+async def delete_webhook(max_retries: int = 3):
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
+                response = await client.get(url)
+                if response.status_code == 200 and response.json().get("ok"):
+                    log.info("Telegram webhook deleted successfully")
+                    return True
+                else:
+                    log.error(f"Failed to delete Telegram webhook: {response.text}")
+        except Exception as e:
+            log.error(f"Error deleting Telegram webhook (attempt {attempt + 1}/{max_retries}): {str(e)}")
+        await asyncio.sleep(2)  # Wait before retrying
+    log.error("Failed to delete webhook after maximum retries")
+    return False
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
     for attempt in range(3):
@@ -284,19 +290,37 @@ async def run_scanner():
         log.error(f"Error in scanner: {str(e)}")
         await asyncio.sleep(3600)
 
-async def run_telegram_polling(telegram_app: Application):
-    try:
-        # Ensure any existing webhook is deleted before starting polling
-        await delete_webhook()
-        await asyncio.sleep(1)  # Small delay to ensure webhook cleanup
-        await telegram_app.initialize()
-        await telegram_app.start()
-        await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-        log.info("Telegram polling started successfully")
-    except Exception as e:
-        log.error(f"Error in Telegram polling: {str(e)}")
-        await telegram_app.stop()
-        await telegram_app.shutdown()
+async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
+    for attempt in range(max_retries):
+        try:
+            # Attempt to delete webhook multiple times to ensure cleanup
+            for _ in range(3):
+                if await delete_webhook():
+                    break
+                await asyncio.sleep(2)
+            await asyncio.sleep(1)  # Small delay to ensure webhook cleanup
+            await telegram_app.initialize()
+            await telegram_app.start()
+            await telegram_app.updater.start_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True,
+                timeout=30,
+                poll_interval=1.0
+            )
+            log.info("Telegram polling started successfully")
+            return  # Success, exit the retry loop
+        except Conflict as e:
+            log.error(f"Polling conflict (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            await telegram_app.stop()
+            await telegram_app.shutdown()
+            await asyncio.sleep(5 * (attempt + 1))  # Exponential backoff
+        except Exception as e:
+            log.error(f"Error in Telegram polling (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            await telegram_app.stop()
+            await telegram_app.shutdown()
+            await asyncio.sleep(5)
+    log.error("Failed to start Telegram polling after maximum retries")
+    raise RuntimeError("Could not start Telegram polling")
 
 @app.on_event("startup")
 async def startup_event():
