@@ -59,12 +59,10 @@ async def delete_webhook(max_retries: int = 5):
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Webhook ہٹائیں اور پینڈنگ اپ ڈیٹس صاف کریں
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
                 response = await client.get(url)
                 if response.status_code == 200 and response.json().get("ok"):
                     log.info("Telegram webhook deleted successfully")
-                    # Webhook سٹیٹس چیک کریں
                     url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
                     response = await client.get(url)
                     if response.status_code == 200:
@@ -80,7 +78,7 @@ async def delete_webhook(max_retries: int = 5):
                     log.error(f"Failed to delete Telegram webhook: {response.text}")
         except Exception as e:
             log.error(f"Error deleting Telegram webhook (attempt {attempt + 1}/{max_retries}): {str(e)}")
-        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+        await asyncio.sleep(2 ** attempt)
     log.error("Failed to delete webhook after maximum retries")
     return False
 
@@ -125,7 +123,6 @@ async def save_signal_to_csv(signal: Dict):
 async def process_symbol(symbol: str):
     log.info(f"[{symbol}] Checking for cooldown")
     
-    # ہر ٹائم فریم سے پہلے cooldown چیک کرو
     if symbol in cooldowns:
         cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
         if datetime.utcnow() < cooldown_end:
@@ -151,7 +148,6 @@ async def process_symbol(symbol: str):
     if result and 'signals' in result and result['signals']:
         best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
         if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
-            # دوبارہ cooldown چیک کرو سگنل بھیجنے سے پہلے
             if symbol in cooldowns:
                 cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
                 if datetime.utcnow() < cooldown_end:
@@ -173,7 +169,6 @@ async def process_symbol(symbol: str):
     else:
         log.info(f"⚠️ {symbol} - No valid signals")
 
-# Telegram Command Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     if chat_id != CHAT_ID:
@@ -313,12 +308,10 @@ async def run_scanner():
 async def run_telegram_polling(telegram_app: Application, max_retries: int = 10):
     for attempt in range(max_retries):
         try:
-            # Webhook ہٹانے کی کوشش، پینڈنگ اپ ڈیٹس صاف کرو
             if not await delete_webhook():
                 log.error("Failed to delete webhook, retrying...")
                 await asyncio.sleep(2 ** attempt)
                 continue
-            # getUpdates کے ذریعے پینڈنگ اپ ڈیٹس صاف کرو
             async with httpx.AsyncClient(timeout=30.0) as client:
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
                 response = await client.get(url)
@@ -327,7 +320,7 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 10)
                 else:
                     log.warning(f"Failed to clear pending updates: {response.text}")
             
-            await asyncio.sleep(2)  # Webhook اور اپ ڈیٹس صاف ہونے کا انتظار
+            await asyncio.sleep(2)
             await telegram_app.initialize()
             await telegram_app.start()
             await telegram_app.updater.start_polling(
@@ -340,7 +333,6 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 10)
             return
         except Conflict as e:
             log.error(f"Polling conflict (attempt {attempt + 1}/{max_retries}): {str(e)}")
-            # Webhook اور اپ ڈیٹس دوبارہ صاف کرو
             await delete_webhook()
             async with httpx.AsyncClient(timeout=30.0) as client:
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
@@ -366,12 +358,10 @@ async def startup_event():
     try:
         await EXCHANGE.load_markets()
         log.info("Binance API connection successful")
-        await delete_webhook()  # Ensure webhook is deleted on startup
+        await delete_webhook()
         
-        # Initialize Telegram bot
         telegram_app = Application.builder().token(BOT_TOKEN).build()
         
-        # Add command handlers
         telegram_app.add_handler(CommandHandler("start", start))
         telegram_app.add_handler(CommandHandler("help", help_command))
         telegram_app.add_handler(CommandHandler("report", report))
@@ -379,10 +369,7 @@ async def startup_event():
         telegram_app.add_handler(CommandHandler("status", status))
         telegram_app.add_handler(CommandHandler("summary", summary))
         
-        # Start polling in a separate task
         asyncio.create_task(run_telegram_polling(telegram_app))
-        
-        # Start scanner
         asyncio.create_task(run_scanner())
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
