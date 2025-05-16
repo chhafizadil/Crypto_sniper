@@ -37,7 +37,7 @@ CHAT_ID = "-4694205383"
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
 
-cooldowns: Dict[str, Dict[str, datetime]] = {}
+cooldowns: Dict[str, datetime] = {}
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
     for attempt in range(3):
@@ -80,15 +80,11 @@ async def save_signal_to_csv(signal: Dict):
 async def process_symbol(symbol: str):
     log.info(f"[{symbol}] Checking for cooldown")
     
-    if symbol not in cooldowns:
-        cooldowns[symbol] = {}
-    
-    for timeframe in TIMEFRAMES:
-        if timeframe in cooldowns[symbol]:
-            cooldown_end = cooldowns[symbol][timeframe] + timedelta(seconds=COOLDOWN_PERIOD)
-            if datetime.utcnow() < cooldown_end:
-                log.info(f"[{symbol}] In cooldown for {timeframe} until {cooldown_end}")
-                return
+    if symbol in cooldowns:
+        cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
+        if datetime.utcnow() < cooldown_end:
+            log.info(f"[{symbol}] In cooldown until {cooldown_end} for all timeframes")
+            return
     
     log.info(f"[{symbol}] Starting multi-timeframe analysis")
     
@@ -109,8 +105,8 @@ async def process_symbol(symbol: str):
     if result and 'signals' in result and result['signals']:
         best_signal = max(result['signals'], key=lambda x: x['confidence'], default=None)
         if best_signal and best_signal['confidence'] >= CONFIDENCE_THRESHOLD:
-            cooldowns[symbol][best_signal['timeframe']] = datetime.utcnow()
-            log.info(f"[{symbol}] Added to cooldown for {best_signal['timeframe']} for {COOLDOWN_PERIOD/3600} hours")
+            cooldowns[symbol] = datetime.utcnow()
+            log.info(f"[{symbol}] Added to cooldown for all timeframes for {COOLDOWN_PERIOD/3600} hours")
             
             best_signal['trade_type'] = "Normal" if best_signal['confidence'] >= 80 else "Scalping"
             best_signal['timestamp'] = pd.Timestamp.now()
@@ -172,7 +168,8 @@ async def run_scanner():
             try:
                 await scan_symbols()
                 log.info("Scan complete, waiting for next cycle...")
-                if datetime.utcnow().strftime("%H:%M") == "23:59":
+                now = datetime.utcnow()
+                if now.hour == 23 and now.minute == 59:
                     await daily_report()
                 await asyncio.sleep(60)
             except Exception as e:
