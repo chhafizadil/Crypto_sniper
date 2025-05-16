@@ -12,6 +12,7 @@ from telebot.report_generator import generate_daily_summary
 from datetime import datetime, timedelta
 import httpx
 import psutil
+import os
 
 logging.basicConfig(
     level=logging.ERROR,
@@ -38,6 +39,19 @@ predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
 
 cooldowns: Dict[str, datetime] = {}
+
+async def send_telegram_message(chat_id: str, text: str):
+    try:
+        async with httpx.AsyncClient() as client:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+            payload = {"chat_id": chat_id, "text": text}
+            response = await client.post(url, json=payload)
+            if response.status_code == 200 and response.json().get("ok"):
+                log.info(f"Telegram message sent to {chat_id}: {text[:50]}...")
+            else:
+                log.error(f"Failed to send Telegram message: {response.text}")
+    except Exception as e:
+        log.error(f"Error sending Telegram message: {str(e)}")
 
 async def delete_webhook():
     try:
@@ -146,9 +160,84 @@ async def handle_telegram_updates():
                         last_update_id = update["update_id"]
                         message = update.get("message", {}).get("text", "")
                         chat_id = update.get("message", {}).get("chat", {}).get("id", "")
-                        if message == "/report" and str(chat_id) == CHAT_ID:
+                        if str(chat_id) != CHAT_ID:
+                            continue  # Only process commands from authorized chat
+
+                        if message == "/report":
                             log.info("Received /report command")
                             await generate_daily_summary()
+                        elif message == "/start":
+                            log.info("Received /start command")
+                            welcome_msg = (
+                                "Welcome to the Crypto Signal Bot! 🚀\n"
+                                "Use /help to see available commands."
+                            )
+                            await send_telegram_message(chat_id, welcome_msg)
+                        elif message == "/help":
+                            log.info("Received /help command")
+                            help_msg = (
+                                "Available Commands:\n"
+                                "/start - Start the bot and get welcome message\n"
+                                "/help - Show available commands and usage\n"
+                                "/report - Generate and send the daily signal report\n"
+                                "/signals - Display latest trading signals\n"
+                                "/status - Check bot status and health\n"
+                                "/summary - Show summary of recent signals"
+                            )
+                            await send_telegram_message(chat_id, help_msg)
+                        elif message == "/signals":
+                            log.info("Received /signals command")
+                            if os.path.exists('logs/signals_log_new.csv'):
+                                df = pd.read_csv('logs/signals_log_new.csv')
+                                if not df.empty:
+                                    latest_signals = df.tail(5)[['symbol', 'direction', 'entry', 'confidence', 'timeframe', 'timestamp']]
+                                    signals_msg = "Latest Signals:\n"
+                                    for _, row in latest_signals.iterrows():
+                                        signals_msg += (
+                                            f"{row['symbol']} ({row['timeframe']}): {row['direction']}, "
+                                            f"Entry: {row['entry']:.8f}, Confidence: {row['confidence']}%, "
+                                            f"Time: {row['timestamp']}\n"
+                                        )
+                                else:
+                                    signals_msg = "No signals found."
+                            else:
+                                signals_msg = "No signal logs available."
+                            await send_telegram_message(chat_id, signals_msg)
+                        elif message == "/status":
+                            log.info("Received /status command")
+                            memory = psutil.virtual_memory()
+                            status_msg = (
+                                f"Bot Status:\n"
+                                f"Health: {'Healthy' if memory.percent < 85 else 'Unhealthy'}\n"
+                                f"Memory Usage: {memory.percent}%\n"
+                                f"Uptime: {datetime.utcnow() - pd.Timestamp.now(tz='UTC')}\n"
+                                f"Symbols Scanned: {SYMBOL_LIMIT}\n"
+                                f"Timeframes: {', '.join(TIMEFRAMES)}"
+                            )
+                            await send_telegram_message(chat_id, status_msg)
+                        elif message == "/summary":
+                            log.info("Received /summary command")
+                            if os.path.exists('logs/signals_log_new.csv'):
+                                df = pd.read_csv('logs/signals_log_new.csv')
+                                if not df.empty:
+                                    total_signals = len(df)
+                                    pending = len(df[df['status'] == 'pending'])
+                                    success = len(df[df['status'].isin(['tp1', 'tp2', 'tp3'])])
+                                    failed = len(df[df['status'] == 'sl'])
+                                    avg_confidence = df['confidence'].mean()
+                                    summary_msg = (
+                                        f"Signal Summary:\n"
+                                        f"Total Signals: {total_signals}\n"
+                                        f"Pending: {pending}\n"
+                                        f"Successful (TP Hit): {success}\n"
+                                        f"Failed (SL Hit): {failed}\n"
+                                        f"Average Confidence: {avg_confidence:.2f}%"
+                                    )
+                                else:
+                                    summary_msg = "No signals found."
+                            else:
+                                summary_msg = "No signal logs available."
+                            await send_telegram_message(chat_id, summary_msg)
                 else:
                     log.error(f"Failed to fetch Telegram updates: {response.text}")
         except Exception as e:
