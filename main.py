@@ -286,9 +286,12 @@ async def run_scanner():
 
 async def run_telegram_polling(telegram_app: Application):
     try:
+        # Ensure any existing webhook is deleted before starting polling
+        await delete_webhook()
+        await asyncio.sleep(1)  # Small delay to ensure webhook cleanup
         await telegram_app.initialize()
         await telegram_app.start()
-        await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         log.info("Telegram polling started successfully")
     except Exception as e:
         log.error(f"Error in Telegram polling: {str(e)}")
