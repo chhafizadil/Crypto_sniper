@@ -15,7 +15,7 @@ import psutil
 import os
 
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.INFO,  # Changed to INFO for better debugging
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
     handlers=[
         logging.FileHandler('logs/bot.log'),
@@ -27,7 +27,7 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 120  # Reduced to avoid memory issues
+SYMBOL_LIMIT = 120
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 10000000
 CONFIDENCE_THRESHOLD = 70.0
@@ -56,7 +56,7 @@ async def send_telegram_message(chat_id: str, text: str):
 async def delete_webhook():
     try:
         async with httpx.AsyncClient() as client:
-            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
             response = await client.get(url)
             if response.status_code == 200 and response.json().get("ok"):
                 log.info("Telegram webhook deleted successfully")
@@ -240,9 +240,13 @@ async def handle_telegram_updates():
                             await send_telegram_message(chat_id, summary_msg)
                 else:
                     log.error(f"Failed to fetch Telegram updates: {response.text}")
+                    if response.status_code == 409:
+                        log.warning("Conflict detected, attempting to delete webhook again")
+                        await delete_webhook()
+                        await asyncio.sleep(10)  # Wait before retrying
         except Exception as e:
             log.error(f"Error in Telegram updates: {str(e)}")
-        await asyncio.sleep(5)
+            await asyncio.sleep(5)
 
 async def scan_symbols():
     log.info(f"Scanning {SYMBOL_LIMIT} symbols across {TIMEFRAMES}")
