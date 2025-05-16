@@ -20,12 +20,17 @@ class SignalPredictor:
             df['macd'] = ta.trend.MACD(df['close'], window_slow=26, window_fast=12, window_sign=9, fillna=True).macd()
             df['macd_signal'] = ta.trend.MACD(df['close'], window_slow=26, window_fast=12, window_sign=9, fillna=True).macd_signal()
             df['atr'] = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14, fillna=True).average_true_range()
+            df['bb_upper'] = ta.volatility.BollingerBands(df['close'], window=20, window_dev=2, fillna=True).bollinger_hband()
+            df['bb_lower'] = ta.volatility.BollingerBands(df['close'], window=20, window_dev=2, fillna=True).bollinger_lband()
+            df['ema_fast'] = ta.trend.EMAIndicator(df['close'], window=12, fillna=True).ema_indicator()
+            df['ema_slow'] = ta.trend.EMAIndicator(df['close'], window=26, fillna=True).ema_indicator()
+            df['stoch_k'] = ta.momentum.StochasticOscillator(df['high'], df['low'], df['close'], window=14, smooth_window=3, fillna=True).stoch()
 
             df.replace([np.inf, -np.inf], np.nan, inplace=True)
             df.ffill(inplace=True)
             df.fillna(0.0, inplace=True)
             
-            logger.info("Indicators calculated: rsi, volume_sma_20, macd, atr")
+            logger.info("Indicators calculated: rsi, volume_sma_20, macd, atr, bb_upper, bb_lower, ema_fast, ema_slow, stoch_k")
             return df
         except Exception as e:
             logger.error(f"Error calculating indicators: {str(e)}")
@@ -65,44 +70,56 @@ class SignalPredictor:
                 return None
 
             latest = df.iloc[-1]
-            if df[['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr']].isna().any().any():
+            if df[['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr', 'bb_upper', 'bb_lower', 'ema_fast', 'ema_slow', 'stoch_k']].isna().any().any():
                 logger.warning(f"[{symbol}] NaN values in critical indicators for {timeframe}")
                 return None
 
             long_conditions = [
                 pd.notna(latest['rsi']) and latest['rsi'] < 50,
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] > latest['volume_sma_20'],
-                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal']
+                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] > latest['macd_signal'],
+                pd.notna(latest['bb_lower']) and latest['close'] < latest['bb_lower'],
+                pd.notna(latest['ema_fast']) and pd.notna(latest['ema_slow']) and latest['ema_fast'] > latest['ema_slow'],
+                pd.notna(latest['stoch_k']) and latest['stoch_k'] < 20
             ]
             short_conditions = [
                 pd.notna(latest['rsi']) and latest['rsi'] > 50,
                 pd.notna(latest['volume']) and pd.notna(latest['volume_sma_20']) and latest['volume'] < latest['volume_sma_20'],
-                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal']
+                pd.notna(latest['macd']) and pd.notna(latest['macd_signal']) and latest['macd'] < latest['macd_signal'],
+                pd.notna(latest['bb_upper']) and latest['close'] > latest['bb_upper'],
+                pd.notna(latest['ema_fast']) and pd.notna(latest['ema_slow']) and latest['ema_fast'] < latest['ema_slow'],
+                pd.notna(latest['stoch_k']) and latest['stoch_k'] > 80
             ]
 
-            long_confidence = sum([25 if i < 2 else 50 for i, cond in enumerate(long_conditions) if cond])
-            short_confidence = sum([25 if i < 2 else 50 for i, cond in enumerate(short_conditions) if cond])
+            long_confidence = sum([20 for cond in long_conditions if cond])
+            short_confidence = sum([20 for cond in short_conditions if cond])
 
             direction = None
             confidence = 0
             conditions_met = []
 
-            if long_conditions[2] or sum(long_conditions[:2]) >= 1:
+            if sum(long_conditions) >= 3:
                 direction = "LONG"
                 confidence = long_confidence
                 conditions_met = [
                     "rsi < 50" if long_conditions[0] else "",
                     "volume > volume_sma_20" if long_conditions[1] else "",
-                    "macd > macd_signal" if long_conditions[2] else ""
+                    "macd > macd_signal" if long_conditions[2] else "",
+                    "close < bb_lower" if long_conditions[3] else "",
+                    "ema_fast > ema_slow" if long_conditions[4] else "",
+                    "stoch_k < 20" if long_conditions[5] else ""
                 ]
                 conditions_met = [c for c in conditions_met if c]
-            elif short_conditions[2] or sum(short_conditions[:2]) >= 1:
+            elif sum(short_conditions) >= 3:
                 direction = "SHORT"
                 confidence = short_confidence
                 conditions_met = [
                     "rsi > 50" if short_conditions[0] else "",
                     "volume < volume_sma_20" if short_conditions[1] else "",
-                    "macd < macd_signal" if short_conditions[2] else ""
+                    "macd < macd_signal" if short_conditions[2] else "",
+                    "close > bb_upper" if short_conditions[3] else "",
+                    "ema_fast < ema_slow" if short_conditions[4] else "",
+                    "stoch_k > 80" if short_conditions[5] else ""
                 ]
                 conditions_met = [c for c in conditions_met if c]
 
