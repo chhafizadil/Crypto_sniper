@@ -1,3 +1,4 @@
+# main.py
 import asyncio
 import logging
 import pandas as pd
@@ -7,8 +8,10 @@ from typing import List, Dict
 from core.analysis import analyze_symbol_multi_timeframe
 from model.predictor import SignalPredictor
 from telebot.sender import send_telegram_signal
+from telebot.report_generator import generate_daily_summary
 from datetime import datetime, timedelta
 import httpx
+import psutil
 
 logging.basicConfig(
     level=logging.ERROR,
@@ -23,11 +26,13 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 100
+SYMBOL_LIMIT = 150
 TIMEFRAMES = ["15m", "1h"]
 MIN_VOLUME = 10000000
 CONFIDENCE_THRESHOLD = 70.0
 COOLDOWN_PERIOD = 21600
+BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
+CHAT_ID = "-4694205383"
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
@@ -115,6 +120,28 @@ async def process_symbol(symbol: str):
     else:
         log.info(f"⚠️ {symbol} - No valid signals")
 
+async def handle_telegram_updates():
+    last_update_id = 0
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates"
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params={"offset": last_update_id + 1, "timeout": 60})
+                if response.status_code == 200:
+                    updates = response.json().get("result", [])
+                    for update in updates:
+                        last_update_id = update["update_id"]
+                        message = update.get("message", {}).get("text", "")
+                        chat_id = update.get("message", {}).get("chat", {}).get("id", "")
+                        if message == "/report" and str(chat_id) == CHAT_ID:
+                            log.info("Received /report command")
+                            await generate_daily_summary()
+                else:
+                    log.error(f"Failed to fetch Telegram updates: {response.text}")
+        except Exception as e:
+            log.error(f"Error in Telegram updates: {str(e)}")
+        await asyncio.sleep(5)
+
 async def scan_symbols():
     log.info(f"Scanning {SYMBOL_LIMIT} symbols across {TIMEFRAMES}")
     symbols = await get_high_volume_symbols()
@@ -128,20 +155,37 @@ async def scan_symbols():
             log.error(f"Error processing {symbol}: {str(e)}")
     await asyncio.sleep(3600)
 
+async def run_scanner():
+    try:
+        await EXCHANGE.load_markets()
+        async def daily_report():
+            try:
+                await generate_daily_summary()
+                log.info("Daily summary generated and sent")
+            except Exception as e:
+                log.error(f"Daily report error: {str(e)}")
+        while True:
+            try:
+                await scan_symbols()
+                log.info("Scan complete, waiting for next cycle...")
+                if datetime.utcnow().strftime("%H:%M") == "23:59":
+                    await daily_report()
+                await asyncio.sleep(3600)
+            except Exception as e:
+                log.error(f"Error in scan cycle: {str(e)}")
+                await asyncio.sleep(3600)
+    except Exception as e:
+        log.error(f"Error in scanner: {str(e)}")
+        await asyncio.sleep(3600)
+
 @app.on_event("startup")
 async def startup_event():
     log.info("Starting bot...")
     try:
         await EXCHANGE.load_markets()
         log.info("Binance API connection successful")
-        while True:
-            try:
-                await scan_symbols()
-                log.info("Scan complete, waiting for next cycle...")
-                await asyncio.sleep(3600)
-            except Exception as e:
-                log.error(f"Error in scan cycle: {str(e)}")
-                await asyncio.sleep(3600)
+        asyncio.create_task(run_scanner())
+        asyncio.create_task(handle_telegram_updates())
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
         await asyncio.sleep(3600)
@@ -158,6 +202,10 @@ async def shutdown_event():
 @app.get("/health")
 async def health_check():
     try:
+        memory = psutil.virtual_memory()
+        if memory.percent > 85:
+            log.error(f"Health check failed: High memory usage {memory.percent}%")
+            return {"status": "unhealthy", "error": f"High memory usage {memory.percent}%"}, 500
         if EXCHANGE is None or not hasattr(EXCHANGE, 'markets'):
             log.error("Health check failed: Exchange not initialized or markets not loaded")
             return {"status": "unhealthy", "error": "Exchange not initialized or markets not loaded"}, 500
