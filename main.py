@@ -55,20 +55,28 @@ async def send_telegram_message(chat_id: str, text: str):
     except Exception as e:
         log.error(f"Error sending Telegram message: {str(e)}")
 
-async def delete_webhook(max_retries: int = 3):
+async def delete_webhook(max_retries: int = 5):
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient() as client:
+                # Webhook ہٹائیں اور پینڈنگ اپ ڈیٹس صاف کریں
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
                 response = await client.get(url)
                 if response.status_code == 200 and response.json().get("ok"):
                     log.info("Telegram webhook deleted successfully")
-                    return True
+                    # Webhook سٹیٹس چیک کریں
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
+                    response = await client.get(url)
+                    if response.status_code == 200 and response.json().get("result", {}).get("url") == "":
+                        log.info("Webhook confirmed deleted")
+                        return True
+                    else:
+                        log.warning(f"Webhook still active: {response.json().get('result', {}).get('url')}")
                 else:
                     log.error(f"Failed to delete Telegram webhook: {response.text}")
         except Exception as e:
             log.error(f"Error deleting Telegram webhook (attempt {attempt + 1}/{max_retries}): {str(e)}")
-        await asyncio.sleep(2)  # Wait before retrying
+        await asyncio.sleep(2 ** attempt)  # Exponential backoff
     log.error("Failed to delete webhook after maximum retries")
     return False
 
@@ -236,7 +244,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not df.empty:
             total_signals = len(df)
             pending = len(df[df['status'] == 'pending'])
-            success = len(df[df['status'].isin(['tp1', 'tp2', 'tp3'])])
+            success = len(df[df['status'].isin(['tpDerek', 'tp2', 'tp3'])])
             failed = len(df[df['status'] == 'sl'])
             avg_confidence = df['confidence'].mean()
             summary_msg = (
@@ -293,12 +301,12 @@ async def run_scanner():
 async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
     for attempt in range(max_retries):
         try:
-            # Attempt to delete webhook multiple times to ensure cleanup
-            for _ in range(3):
-                if await delete_webhook():
-                    break
-                await asyncio.sleep(2)
-            await asyncio.sleep(1)  # Small delay to ensure webhook cleanup
+            # Webhook ہٹانے کی کوشش
+            if not await delete_webhook():
+                log.error("Failed to delete webhook, retrying...")
+                await asyncio.sleep(2 **asaki attempt)
+                continue
+            await asyncio.sleep(1)  # Webhook صاف ہونے کا انتظار
             await telegram_app.initialize()
             await telegram_app.start()
             await telegram_app.updater.start_polling(
@@ -308,12 +316,14 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
                 poll_interval=1.0
             )
             log.info("Telegram polling started successfully")
-            return  # Success, exit the retry loop
+            return
         except Conflict as e:
             log.error(f"Polling conflict (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            # Webhook دوبارہ ہٹانے کی کوشش
+            await delete_webhook()
             await telegram_app.stop()
             await telegram_app.shutdown()
-            await asyncio.sleep(5 * (attempt + 1))  # Exponential backoff
+            await asyncio.sleep(5 * (attempt + 1))
         except Exception as e:
             log.error(f"Error in Telegram polling (attempt {attempt + 1}/{max_retries}): {str(e)}")
             await telegram_app.stop()
@@ -349,7 +359,7 @@ async def startup_event():
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
         await EXCHANGE.close()
-        raise  # Re-raise to ensure FastAPI fails health check if needed
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
