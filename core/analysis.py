@@ -40,7 +40,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 if df.empty or len(df) < 20:
                     logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
                     continue
-                if df[['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr']].isna().any().any():
+                if df[['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr', 'bb_upper', 'bb_lower', 'ema_fast', 'ema_slow', 'stoch_k']].isna().any().any():
                     logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                     continue
                 
@@ -55,15 +55,22 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
             logger.info(f"[{symbol}] No valid signals across any timeframe")
             return None
 
-        timeframe_agreement = len([s for s in signals if s['direction'] == signals[0]['direction']]) / len(signals)
-        if timeframe_agreement < 0.75:
-            logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
+        # Check timeframe agreement
+        primary_direction = max(set(s['direction'] for s in signals), key=lambda d: sum(1 for s in signals if s['direction'] == d))
+        timeframe_agreement = len([s for s in signals if s['direction'] == primary_direction]) / len(signals)
+        
+        # Calculate weighted confidence
+        total_confidence = sum(s['confidence'] for s in signals if s['direction'] == primary_direction)
+        count_signals = len([s for s in signals if s['direction'] == primary_direction])
+        avg_confidence = total_confidence / count_signals if count_signals > 0 else 0
+        
+        if timeframe_agreement < 0.5 or avg_confidence < 70.0:
+            logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f}) or avg confidence ({avg_confidence:.2f})")
             return None
 
-        avg_confidence = np.mean([s['confidence'] for s in signals])
-        best_signal = max(signals, key=lambda x: x['confidence'])
+        best_signal = max([s for s in signals if s['direction'] == primary_direction], key=lambda x: x['confidence'])
         best_signal['confidence'] = min(avg_confidence, 100)
-        logger.info(f"[{symbol}] Final signal selected with adjusted confidence: {best_signal['confidence']:.2f}%")
+        logger.info(f"[{symbol}] Final signal selected: {best_signal['direction']}, Confidence: {best_signal['confidence']:.2f}%")
 
         return {"symbol": symbol, "signals": [best_signal]}
     except Exception as e:
