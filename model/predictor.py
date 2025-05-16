@@ -1,3 +1,4 @@
+# model/predictor.py
 import pandas as pd
 import numpy as np
 from typing import Dict, Optional
@@ -108,7 +109,7 @@ class SignalPredictor:
             if direction:
                 current_price = latest['close']
                 atr = max(latest['atr'], current_price * 0.005)
-                min_diff = 0.0001
+                min_diff = 0.001
                 multiplier = 2.0
                 tp1_possibility = 0.80
                 tp2_possibility = 0.65
