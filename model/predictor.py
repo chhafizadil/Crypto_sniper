@@ -31,7 +31,7 @@ class SignalPredictor:
             logger.error(f"Error calculating indicators: {str(e)}")
             return df
 
-    async def check_signal_status(self, symbole: str, signal: Dict) -> str:
+    async def check_signal_status(self, symbol: str, signal: Dict) -> str:
         try:
             ticker = await self.exchange.fetch_ticker(symbol)
             current_price = ticker['last']
@@ -143,7 +143,7 @@ class SignalPredictor:
                     "hit_timestamp": None
                 }
                 if signal['tp1'] == signal['entry']:
-                    logger.warning(f"[{symbol}] TP1 ({signal['tp1']}) and Entry ({signal['entry']}) are the same")
+                    logger.warning(f"[{symbol}] TP1 ({signal['tp1']}) and Entry ({signal['entry']}) are the same, check ATR or rounding")
                 logger.info(
                     f"[{symbol}] Signal for {timeframe}: {direction}, Confidence: {confidence:.2f}%, "
                     f"TP1: {signal['tp1']:.8f} ({signal['tp1_possibility']*100:.0f}%), "
