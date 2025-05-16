@@ -284,6 +284,17 @@ async def run_scanner():
         log.error(f"Error in scanner: {str(e)}")
         await asyncio.sleep(3600)
 
+async def run_telegram_polling(telegram_app: Application):
+    try:
+        await telegram_app.initialize()
+        await telegram_app.start()
+        await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        log.info("Telegram polling started successfully")
+    except Exception as e:
+        log.error(f"Error in Telegram polling: {str(e)}")
+        await telegram_app.stop()
+        await telegram_app.shutdown()
+
 @app.on_event("startup")
 async def startup_event():
     log.info("Starting bot...")
@@ -304,13 +315,14 @@ async def startup_event():
         telegram_app.add_handler(CommandHandler("summary", summary))
         
         # Start polling in a separate task
-        asyncio.create_task(telegram_app.run_polling())
+        asyncio.create_task(run_telegram_polling(telegram_app))
         
         # Start scanner
         asyncio.create_task(run_scanner())
     except Exception as e:
         log.error(f"Error in startup: {str(e)}")
-        await asyncio.sleep(3600)
+        await EXCHANGE.close()
+        raise  # Re-raise to ensure FastAPI fails health check if needed
 
 @app.on_event("shutdown")
 async def shutdown_event():
