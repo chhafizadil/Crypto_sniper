@@ -1,3 +1,4 @@
+# telebot/sender.py
 import httpx
 import asyncio
 import pandas as pd
