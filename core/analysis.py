@@ -64,7 +64,7 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
         count_signals = len([s for s in signals if s['direction'] == primary_direction])
         avg_confidence = total_confidence / count_signals if count_signals > 0 else 0
         
-        if timeframe_agreement < 0.5 or avg_confidence < 70.0:
+        if timeframe_agreement < 0.5 or avg_confidence < 60.0:
             logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f}) or avg confidence ({avg_confidence:.2f})")
             return None
 
