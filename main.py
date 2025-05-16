@@ -29,13 +29,17 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 200  # اپ ڈیٹ: 200 coins
+SYMBOL_LIMIT = 200
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
-MIN_VOLUME = 1000000  # اپ ڈیٹ: 1 million
+MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0
-COOLDOWN_PERIOD = 21600  # 6 گھنٹے
-BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
-CHAT_ID = "-4694205383"
+COOLDOWN_PERIOD = 21600
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Environment Variable سے پڑھو
+CHAT_ID = os.getenv("CHAT_ID")      # Environment Variable سے پڑھو
+
+if not BOT_TOKEN or not CHAT_ID:
+    log.error("BOT_TOKEN or CHAT_ID not set in environment variables")
+    raise ValueError("BOT_TOKEN and CHAT_ID must be set in environment variables")
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
@@ -305,7 +309,7 @@ async def run_scanner():
         log.error(f"Error in scanner: {str(e)}")
         await asyncio.sleep(3600)
 
-async def run_telegram_polling(telegram_app: Application, max_retries: int = 10):
+async def run_telegram_polling(telegram_app: Application, max_retries: int = 15):
     for attempt in range(max_retries):
         try:
             if not await delete_webhook():
@@ -319,6 +323,16 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 10)
                     log.info("Pending updates cleared via getUpdates")
                 else:
                     log.warning(f"Failed to clear pending updates: {response.text}")
+            
+            for _ in range(3):
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        log.info("Additional pending updates cleared")
+                    else:
+                        log.warning(f"Failed to clear additional updates: {response.text}")
+                await asyncio.sleep(1)
             
             await asyncio.sleep(2)
             await telegram_app.initialize()
