@@ -116,7 +116,7 @@ async def main_loop():
         
         while True:
             tasks = [process_symbol(symbol, exchange, timeframes) 
-                   for symbol in high_volume_symbols[:200]]  # Process first 200 symbols
+                   for symbol in high_volume_symbols[:500]]  # Process first 200 symbols
             await asyncio.gather(*tasks)
             await asyncio.sleep(60)
             
