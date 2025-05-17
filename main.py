@@ -15,7 +15,7 @@ app = FastAPI()
 
 # ==================== ⚙️ CONFIGURATION ==================== 
 MIN_QUOTE_VOLUME = 500000  # Minimum quote volume for filtering symbols ($500,000)
-MIN_CONFIDENCE = 60  # Minimum confidence for valid signals (updated to 60 per user request)
+MIN_CONFIDENCE = 60  # Minimum confidence for valid signals (kept at 60 per user request)
 COOLDOWN_HOURS = 6  # Cooldown period for symbols after generating a signal
 
 cooldowns = {}
@@ -87,7 +87,7 @@ async def get_high_volume_symbols(exchange, min_volume):
     symbols = [s for s in exchange.symbols if s.endswith('/USDT')]
     high_volume_symbols = []
 
-    # Fetch ticker data concurrently in batches of 50 to reduce memory usage
+    # Fetch ticker data concurrently in batches of 25 to reduce memory usage
     async def fetch_ticker(symbol):
         try:
             ticker = await exchange.fetch_ticker(symbol)
@@ -101,8 +101,8 @@ async def get_high_volume_symbols(exchange, min_volume):
             logger.error(f"[{symbol}] Error fetching ticker: {str(e)}")
             return None
 
-    # Process symbols in batches of 50
-    batch_size = 20
+    # Process symbols in batches of 25
+    batch_size = 25
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i + batch_size]
         tasks = [fetch_ticker(symbol) for symbol in batch]
@@ -112,8 +112,9 @@ async def get_high_volume_symbols(exchange, min_volume):
                 symbol, quote_volume = result
                 high_volume_symbols.append(symbol)
                 logger.info(f"[{symbol}] Passed volume filter: ${quote_volume:,.2f} >= ${min_volume:,.0f}")
-        # Add small delay between batches to prevent overloading Koyeb
-        await asyncio.sleep(5)  # 2-second delay between batches
+        # Clear memory and add delay to prevent overloading Koyeb
+        results = None  # Clear results to free memory
+        await asyncio.sleep(3)  # 3-second delay between batches to reduce server load
 
     return high_volume_symbols
 
@@ -137,23 +138,23 @@ async def main_loop():
             logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= ${MIN_QUOTE_VOLUME:,.0f}")
 
             if not high_volume_symbols:
-                logger.warning("No symbols passed volume filter. Retrying in 120 seconds...")
-                await asyncio.sleep(120)  # Increased sleep for stability
+                logger.warning("No symbols passed volume filter. Retrying in 180 seconds...")
+                await asyncio.sleep(180)  # Increased sleep for stability
                 continue
 
-            # Process filtered symbols in batches of 25, up to 100 symbols
-            batch_size = 25
-            selected_symbols = high_volume_symbols[:20]  # Limit to 50 symbols 
+            # Process filtered symbols in batches of 10, up to 20 symbols
+            batch_size = 10
+            selected_symbols = high_volume_symbols[:20]  # Limit to 20 symbols as requested
             for i in range(0, len(selected_symbols), batch_size):
                 batch = selected_symbols[i:i + batch_size]
                 tasks = [process_symbol(symbol, exchange, timeframes) for symbol in batch]
-                await asyncio.gather(*tasks)
+                await asyncio.gather(*tasks, return_exceptions=True)  # Handle exceptions to prevent cycle interruption
                 logger.info(f"Completed analysis batch {i//batch_size + 1}/{len(selected_symbols)//batch_size + 1}")
-                # Add small delay between batches to prevent overloading Koyeb
-                await asyncio.sleep(5)  # 5-second delay between batches
+                # Add delay to prevent overloading Koyeb
+                await asyncio.sleep(5)  # 5-second delay between batches to reduce server load
 
-            logger.info("Completed analysis cycle. Waiting 120 seconds for next cycle...")
-            await asyncio.sleep(120)  # Increased sleep for stability
+            logger.info("Completed analysis cycle. Waiting 180 seconds for next cycle...")
+            await asyncio.sleep(180)  # Increased sleep to minimize server strain
 
     except Exception as e:
         logger.error(f"Error in main loop: {str(e)}")
