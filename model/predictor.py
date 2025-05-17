@@ -30,9 +30,9 @@ class SignalPredictor:
             conditions = []
 
             # Trend and momentum
-            if latest['rsi'] < 30:
+            if latest['rsi'] < 35:  # Relaxed from 30
                 conditions.append("Oversold RSI")
-            elif latest['rsi'] > 70:
+            elif latest['rsi'] > 65:  # Relaxed from 70
                 conditions.append("Overbought RSI")
                 
             if latest['macd'] > latest['macd_signal'] and latest['macd'] > 0:
@@ -40,7 +40,7 @@ class SignalPredictor:
             elif latest['macd'] < latest['macd_signal'] and latest['macd'] < 0:
                 conditions.append("Bearish MACD")
                 
-            if latest['adx'] > 25:
+            if latest['adx'] > 20:  # Relaxed from 25
                 conditions.append("Strong Trend")
                 
             # Candlestick patterns
@@ -64,42 +64,40 @@ class SignalPredictor:
             support = sr_levels['support']
             resistance = sr_levels['resistance']
             
-            if abs(current_price - support) / current_price < 0.02:
+            if abs(current_price - support) / current_price < 0.03:  # Relaxed from 0.02
                 conditions.append("Near Support")
-            if abs(current_price - resistance) / current_price < 0.02:
+            if abs(current_price - resistance) / current_price < 0.03:  # Relaxed from 0.02
                 conditions.append("Near Resistance")
 
             # Volume confirmation
-            if latest['volume'] > latest['volume_sma_20'] * 1.5:
+            if latest['volume'] > latest['volume_sma_20'] * 1.3:  # Relaxed from 1.5
                 conditions.append("High Volume")
 
             # Confidence calculation
             confidence = 50.0
             if "Bullish MACD" in conditions or "Bullish Engulfing" in conditions or "Hammer" in conditions:
-                confidence += 15.0
+                confidence += 20.0  # Increased from 15.0
             if "Bearish MACD" in conditions or "Bearish Engulfing" in conditions or "Shooting Star" in conditions:
-                confidence += 15.0
+                confidence += 20.0  # Increased from 15.0
             if "Strong Trend" in conditions:
-                confidence += 10.0
+                confidence += 15.0  # Increased from 10.0
             if "Near Support" in conditions or "Near Resistance" in conditions:
-                confidence += 10.0
+                confidence += 15.0  # Increased from 10.0
             if "High Volume" in conditions:
-                confidence += 10.0
+                confidence += 15.0  # Increased from 10.0
             if "Oversold RSI" in conditions or "Overbought RSI" in conditions:
-                confidence += 5.0
+                confidence += 10.0  # Increased from 5.0
 
             # Direction logic
             direction = None
             if (
                 ("Bullish MACD" in conditions or "Oversold RSI" in conditions or "Bullish Engulfing" in conditions) and
-                current_price > latest['ema_fast'] and
-                "Near Support" in conditions
+                current_price > latest['ema_fast']
             ):
                 direction = "LONG"
             elif (
                 ("Bearish MACD" in conditions or "Overbought RSI" in conditions or "Bearish Engulfing" in conditions) and
-                current_price < latest['ema_fast'] and
-                "Near Resistance" in conditions
+                current_price < latest['ema_fast']
             ):
                 direction = "SHORT"
 
