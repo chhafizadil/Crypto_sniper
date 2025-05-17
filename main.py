@@ -34,12 +34,8 @@ TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0
 COOLDOWN_PERIOD = 21600
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # Environment Variable سے پڑھو
-CHAT_ID = os.getenv("CHAT_ID")      # Environment Variable سے پڑھو
 
-if not BOT_TOKEN or not CHAT_ID:
-    log.error("BOT_TOKEN or CHAT_ID not set in environment variables")
-    raise ValueError("BOT_TOKEN and CHAT_ID must be set in environment variables")
+
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
