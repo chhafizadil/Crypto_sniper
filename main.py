@@ -106,7 +106,7 @@ async def main_loop():
             try:
                 ticker = await exchange.fetch_ticker(symbol)
                 quote_volume = ticker.get('quoteVolume')
-                if quote_volume is not None and quote_volume >= 500000:
+                if quote_volume is not None and quote_volume >= 50:
                     high_volume_symbols.append(symbol)
                 else:
                     logger.warning(f"[{symbol}] Skipped: Insufficient or missing quoteVolume")
