@@ -113,7 +113,7 @@ async def main_loop():
             except Exception as e:
                 logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
         
-        logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $5000")
+        logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $1")
         
         while True:
             tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:200]]
