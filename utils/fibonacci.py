@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
-from utils.logger import log
+from utils.logger import logger  # Changed from 'log' to 'logger'
 
 def calculate_fibonacci_levels(df):
     try:
         if len(df) < 2 or df['high'].std() <= 0 or df['low'].std() <= 0:
-            log("Insufficient data for Fibonacci levels, returning dummy DataFrame", level='WARNING')
+            logger.warning("Insufficient data for Fibonacci levels, returning dummy DataFrame")
             # Return dummy DataFrame to avoid NoneType error
             dummy_df = df.copy()
             fib_levels = {
@@ -18,7 +18,7 @@ def calculate_fibonacci_levels(df):
             }
             for level, value in fib_levels.items():
                 dummy_df[level] = value
-            log(f"Dummy Fibonacci levels added: {list(fib_levels.keys())}", level='INFO')
+            logger.info(f"Dummy Fibonacci levels added: {list(fib_levels.keys())}")
             return dummy_df
 
         df = df.copy()
@@ -34,7 +34,7 @@ def calculate_fibonacci_levels(df):
         min_low = df['low'].tail(window).min()
         
         if pd.isna(max_high) or pd.isna(min_low) or max_high <= min_low:
-            log("Invalid high/low for Fibonacci levels, returning dummy DataFrame", level='WARNING')
+            logger.warning("Invalid high/low for Fibonacci levels, returning dummy DataFrame")
             # Return dummy DataFrame
             dummy_df = df.copy()
             fib_levels = {
@@ -47,7 +47,7 @@ def calculate_fibonacci_levels(df):
             }
             for level, value in fib_levels.items():
                 dummy_df[level] = value
-            log(f"Dummy Fibonacci levels added: {list(fib_levels.keys())}", level='INFO')
+            logger.info(f"Dummy Fibonacci levels added: {list(fib_levels.keys())}")
             return dummy_df
 
         # Calculate Fibonacci levels
@@ -78,18 +78,18 @@ def calculate_fibonacci_levels(df):
             df[level] = value
 
         if df.isna().any().any() or df.isin([np.inf, -np.inf]).any().any():
-            log("NaN or Inf values in Fibonacci levels, returning dummy DataFrame", level='WARNING')
+            logger.warning("NaN or Inf values in Fibonacci levels, returning dummy DataFrame")
             # Return dummy DataFrame
             dummy_df = df.copy()
             for level, value in fib_levels.items():
                 dummy_df[level] = 0.0
-            log(f"Dummy Fibonacci levels added: {list(fib_levels.keys())}", level='INFO')
+            logger.info(f"Dummy Fibonacci levels added: {list(fib_levels.keys())}")
             return dummy_df
 
-        log(f"Fibonacci levels calculated for {len(df)} rows: {list(fib_levels.keys())}", level='INFO')
+        logger.info(f"Fibonacci levels calculated for {len(df)} rows: {list(fib_levels.keys())}")
         return df
     except Exception as e:
-        log(f"Error in calculate_fibonacci_levels: {e}", level='ERROR')
+        logger.error(f"Error in calculate_fibonacci_levels: {e}")
         # Return dummy DataFrame
         dummy_df = df.copy()
         fib_levels = {
@@ -102,5 +102,5 @@ def calculate_fibonacci_levels(df):
         }
         for level, value in fib_levels.items():
             dummy_df[level] = value
-        log(f"Dummy Fibonacci levels added due to error: {list(fib_levels.keys())}", level='INFO')
+        logger.info(f"Dummy Fibonacci levels added due to error: {list(fib_levels.keys())}")
         return dummy_df
