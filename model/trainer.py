@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from joblib import dump
-from utils.logger import log
+from utils.logger import logger
 from core.candle_patterns import is_bullish_engulfing, is_bearish_engulfing, is_doji, is_hammer, is_shooting_star, is_three_white_soldiers, is_three_black_crows
 import ccxt
 
@@ -11,7 +11,7 @@ def prepare_training_data(symbol, ohlcv):
     try:
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
         if len(df) < 50:
-            log(f"[{symbol}] Insufficient data for training", level='WARNING')
+            logger(f"[{symbol}] Insufficient data for training", level='WARNING')
             return None, None
 
         df["rsi"] = pd.Series(np.full(len(df), 50.0))  # Placeholder
@@ -47,7 +47,7 @@ def prepare_training_data(symbol, ohlcv):
         y = df["label"]
         return X, y
     except Exception as e:
-        log(f"[{symbol}] Error preparing training data: {e}", level='ERROR')
+        logger(f"[{symbol}] Error preparing training data: {e}", level='ERROR')
         return None, None
 
 def train_model(symbol, ohlcv, model_path="models/rf_model.joblib"):
@@ -61,7 +61,7 @@ def train_model(symbol, ohlcv, model_path="models/rf_model.joblib"):
         model.fit(X_train, y_train)
 
         accuracy = model.score(X_test, y_test)
-        log(f"[{symbol}] Model trained with accuracy: {accuracy:.2f}")
+        logger(f"[{symbol}] Model trained with accuracy: {accuracy:.2f}")
 
         import os
         os.makedirs("models", exist_ok=True)
@@ -69,7 +69,7 @@ def train_model(symbol, ohlcv, model_path="models/rf_model.joblib"):
         log(f"[{symbol}] Model saved to {model_path}")
         return True
     except Exception as e:
-        log(f"[{symbol}] Error training model: {e}", level='ERROR')
+        logger(f"[{symbol}] Error training model: {e}", level='ERROR')
         return False
 
 if __name__ == "__main__":
