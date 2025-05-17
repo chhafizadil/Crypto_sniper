@@ -2,8 +2,9 @@ import asyncio
 import ccxt.async_support as ccxt
 import pandas as pd
 import os
+import json
 from fastapi import FastAPI
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.analysis import analyze_symbol_multi_timeframe
 from telebot.sender import send_signal, start_bot
 from utils.logger import logger
@@ -23,8 +24,48 @@ def save_signal_to_csv(signal):
     except Exception as e:
         logger.error(f"Error saving signal to CSV for {signal['symbol']}: {str(e)}")
 
+def is_symbol_on_cooldown(symbol):
+    try:
+        cooldown_file = 'logs/cooldowns.json'
+        os.makedirs('logs', exist_ok=True)
+        if not os.path.exists(cooldown_file):
+            return False
+        
+        with open(cooldown_file, 'r') as f:
+            cooldowns = json.load(f)
+        
+        if symbol in cooldowns:
+            last_signal_time = datetime.fromisoformat(cooldowns[symbol])
+            if datetime.now() < last_signal_time + timedelta(hours=6):
+                logger.info(f"[{symbol}] On cooldown until {last_signal_time + timedelta(hours=6)}")
+                return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking cooldown for {symbol}: {str(e)}")
+        return False
+
+def update_cooldown(symbol):
+    try:
+        cooldown_file = 'logs/cooldowns.json'
+        os.makedirs('logs', exist_ok=True)
+        cooldowns = {}
+        
+        if os.path.exists(cooldown_file):
+            with open(cooldown_file, 'r') as f:
+                cooldowns = json.load(f)
+        
+        cooldowns[symbol] = datetime.now().isoformat()
+        with open(cooldown_file, 'w') as f:
+            json.dump(cooldowns, f)
+        logger.info(f"[{symbol}] Cooldown updated until {datetime.now() + timedelta(hours=6)}")
+    except Exception as e:
+        logger.error(f"Error updating cooldown for {symbol}: {str(e)}")
+
 async def process_symbol(symbol, exchange, timeframes):
     try:
+        if is_symbol_on_cooldown(symbol):
+            return
+        
         logger.info(f"[{symbol}] Starting multi-timeframe analysis")
         signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
         
@@ -35,6 +76,7 @@ async def process_symbol(symbol, exchange, timeframes):
                 signal['hit_timestamp'] = None
                 await send_signal(signal)
                 save_signal_to_csv(signal)
+                update_cooldown(symbol)
                 logger.info(f"[{symbol}] Signal generated for {timeframe}: {signal['direction']}")
                 break
         else:
@@ -80,17 +122,17 @@ async def main_loop():
             try:
                 ticker = await exchange.fetch_ticker(symbol)
                 quote_volume = ticker.get('quoteVolume')
-                if quote_volume is not None and quote_volume >= 1000000:
+                if quote_volume is not None and quote_volume >= 500000:
                     high_volume_symbols.append(symbol)
                 else:
                     logger.warning(f"[{symbol}] Skipped: Insufficient or missing quoteVolume")
             except Exception as e:
                 logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
         
-        logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $1000000")
+        logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $500000")
         
         while True:
-            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:300]]
+            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:100]]
             await asyncio.gather(*tasks)
             await asyncio.sleep(60)
     except Exception as e:
