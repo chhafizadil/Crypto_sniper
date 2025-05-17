@@ -1,19 +1,20 @@
-# utils/helpers.py
-import ccxt.async_support as ccxt
-import asyncio
+import pandas as pd
+from utils.logger import logger  # Changed from 'log' to 'logger'
 
-async def get_symbol_precision(symbol: str) -> int:
+def validate_dataframe(df: pd.DataFrame) -> bool:
     try:
-        exchange = ccxt.binance()
-        await exchange.load_markets()
-        market = exchange.markets[symbol]
-        return market['precision']['price']
-    except Exception:
-        return 3
-
-def round_price(value: float, precision: int = 3) -> float:
-    return round(value, precision)
-
-async def format_price(value: float, symbol: str) -> str:
-    precision = await get_symbol_precision(symbol)
-    return f"{value:.{precision}f}"
+        if df.empty or len(df) < 20:
+            logger.warning("DataFrame is empty or too short")
+            return False
+        required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        if not all(col in df.columns for col in required_columns):
+            logger.warning(f"Missing required columns: {required_columns}")
+            return False
+        if df[required_columns].isna().any().any():
+            logger.warning("NaN values in required columns")
+            return False
+        logger.info("DataFrame validated successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Error validating DataFrame: {str(e)}")
+        return False
