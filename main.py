@@ -38,7 +38,7 @@ async def process_symbol(symbol, exchange, timeframes):
         signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
         
         for timeframe, signal in signals.items():
-            if signal and signal['confidence'] >= 70:
+            if signal and signal['confidence'] >= 60:  # Lowered from 70 to 60
                 signal['timestamp'] = datetime.now().isoformat()
                 signal['status'] = 'pending'
                 signal['hit_timestamp'] = None
@@ -91,15 +91,18 @@ async def main_loop():
         for symbol in symbols:
             try:
                 ticker = await exchange.fetch_ticker(symbol)
-                if ticker['quoteVolume'] >= 1000000:
+                quote_volume = ticker.get('quoteVolume')
+                if quote_volume is not None and quote_volume >= 1000000:
                     high_volume_symbols.append(symbol)
+                else:
+                    logger.warning(f"[{symbol}] Skipped: Insufficient or missing quoteVolume")
             except Exception as e:
                 logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
         
         logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $1000000")
         
         while True:
-            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:300]]
+            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:300]
             await asyncio.gather(*tasks)
             await asyncio.sleep(60)
     except Exception as e:
