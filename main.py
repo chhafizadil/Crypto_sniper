@@ -3,7 +3,7 @@ import ccxt.async_support as ccxt
 import pandas as pd
 import os
 from fastapi import FastAPI
-from datetime import datetime, timedelta
+from datetime import datetime
 from core.analysis import analyze_symbol_multi_timeframe
 from telebot.sender import send_signal, start_bot
 from utils.logger import logger
@@ -19,34 +19,22 @@ def save_signal_to_csv(signal):
         file_path = 'logs/signals_log_new.csv'
         df = pd.DataFrame([signal])
         df.to_csv(file_path, mode='a', index=False, header=not os.path.exists(file_path))
-        logger.info(f"Signal saved to CSV: {signal['symbol']}")
+        logger.info(f"Signal saved to CSV: {signal['symbol']} at {signal['timestamp']}")
     except Exception as e:
-        logger.error(f"Error saving signal to CSV: {str(e)}")
+        logger.error(f"Error saving signal to CSV for {signal['symbol']}: {str(e)}")
 
 async def process_symbol(symbol, exchange, timeframes):
     try:
-        logger.info(f"[{symbol}] Checking for cooldown")
-        cooldown_file = f"logs/{symbol.replace('/', '_')}_cooldown.txt"
-        if os.path.exists(cooldown_file):
-            with open(cooldown_file, 'r') as f:
-                last_signal_time = datetime.fromisoformat(f.read())
-                if (datetime.now() - last_signal_time).total_seconds() < 3600:
-                    logger.info(f"[{symbol}] In cooldown")
-                    return
-
         logger.info(f"[{symbol}] Starting multi-timeframe analysis")
         signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
         
         for timeframe, signal in signals.items():
-            if signal and signal['confidence'] >= 60:  # Lowered from 70 to 60
+            if signal and signal['confidence'] >= 60:
                 signal['timestamp'] = datetime.now().isoformat()
                 signal['status'] = 'pending'
                 signal['hit_timestamp'] = None
                 await send_signal(signal)
                 save_signal_to_csv(signal)
-                
-                with open(cooldown_file, 'w') as f:
-                    f.write(datetime.now().isoformat())
                 logger.info(f"[{symbol}] Signal generated for {timeframe}: {signal['direction']}")
                 break
         else:
@@ -85,7 +73,7 @@ async def main_loop():
         logger.info("Binance API connection successful")
 
         timeframes = ['15m', '1h', '4h', '1d']
-        symbols = [symbol for symbol in exchange.symbols if symbol.endswith('USDT')]
+        symbols = [symbol for symbol in exchange.symbols if symbol.endswith('/USDT')]
         high_volume_symbols = []
         
         for symbol in symbols:
@@ -102,7 +90,7 @@ async def main_loop():
         logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $1000000")
         
         while True:
-            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:300]
+            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:300]]
             await asyncio.gather(*tasks)
             await asyncio.sleep(60)
     except Exception as e:
@@ -113,8 +101,8 @@ async def main_loop():
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting bot...")
-    asyncio.create_task(start_bot())  # Start Telegram bot in background
-    asyncio.create_task(main_loop())  # Start main loop in background
+    asyncio.create_task(start_bot())
+    asyncio.create_task(main_loop())
 
 @app.get("/health")
 async def health_check():
