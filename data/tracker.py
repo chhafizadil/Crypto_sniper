@@ -1,5 +1,5 @@
 import polars as pl
-from utils.logger import log
+from utils.logger import logger
 import ccxt.async_support as ccxt
 import asyncio
 
