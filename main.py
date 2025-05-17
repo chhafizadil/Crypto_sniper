@@ -14,11 +14,6 @@ import psutil
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.error import Conflict
-from dotenv import load_dotenv
-import os
-
-# .env فائل لوڈ کرو
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,17 +28,13 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 200
+SYMBOL_LIMIT = 300
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0
-COOLDOWN_PERIOD = 21600  # 6 گھنٹے
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # .env سے پڑھو
-CHAT_ID = os.getenv("CHAT_ID")      # .env سے پڑھو
-
-if not BOT_TOKEN or not CHAT_ID:
-    log.error("BOT_TOKEN or CHAT_ID not set in .env file")
-    raise ValueError("BOT_TOKEN and CHAT_ID must be set in .env file")
+COOLDOWN_PERIOD = 21600
+BOT_TOKEN = "7620836100:AAGY7xBjNJMKlzrDDMrQ5hblXzd_k_BvEtU"  # ہارڈ کوڈ ٹوکن
+CHAT_ID = "-4694205383"  # ہارڈ کوڈ CHAT_ID
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
@@ -57,7 +48,7 @@ async def send_telegram_message(chat_id: str, text: str):
             payload = {"chat_id": chat_id, "text": text}
             response = await client.post(url, json=payload)
             if response.status_code == 200 and response.json().get("ok"):
-                log.info(f"Telegram message sent to {chat_id}")
+                log.info(f"Telegram message sent to {chat_id}: {text[:50]}...")
             else:
                 log.error(f"Failed to send Telegram message: {response.text}")
     except Exception as e:
@@ -70,30 +61,40 @@ async def delete_webhook(max_retries: int = 5):
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
                 response = await client.get(url)
                 if response.status_code == 200 and response.json().get("ok"):
-                    log.info("Telegram webhook deleted")
-                    return True
+                    log.info("Telegram webhook deleted successfully")
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        webhook_info = response.json().get("result", {})
+                        if webhook_info.get("url") == "" and webhook_info.get("pending_update_count", 0) == 0:
+                            log.info("Webhook confirmed deleted with no pending updates")
+                            return True
+                        else:
+                            log.warning(f"Webhook not fully cleared: url={webhook_info.get('url')}, pending_updates={webhook_info.get('pending_update_count')}")
+                    else:
+                        log.error(f"Failed to fetch webhook info: {response.text}")
                 else:
                     log.error(f"Failed to delete Telegram webhook: {response.text}")
         except Exception as e:
-            log.error(f"Error deleting webhook (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            log.error(f"Error deleting Telegram webhook (attempt {attempt + 1}/{max_retries}): {str(e)}")
         await asyncio.sleep(2 ** attempt)
     log.error("Failed to delete webhook after maximum retries")
     return False
 
 async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
-    for attempt in range(5):  # ريٹری 5
+    for attempt in range(3):
         try:
             ohlcv = await EXCHANGE.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             return df
         except ccxt.RateLimitExceeded:
-            log.warning(f"[{symbol}] Rate limit exceeded for {timeframe}, retrying in 15s")
-            await asyncio.sleep(15)  # تاخیر 15 سیکنڈ
+            log.warning(f"[{symbol}] Rate limit exceeded for {timeframe}, retrying in 10s")
+            await asyncio.sleep(10)
         except Exception as e:
             log.error(f"[{symbol}] Error fetching OHLCV for {timeframe}: {str(e)}")
             return pd.DataFrame()
-    log.error(f"[{symbol}] Failed to fetch OHLCV for {timeframe} after 5 attempts")
+    log.error(f"[{symbol}] Failed to fetch OHLCV for {timeframe} after 3 attempts")
     return pd.DataFrame()
 
 async def get_high_volume_symbols() -> List[str]:
@@ -114,7 +115,7 @@ async def save_signal_to_csv(signal: Dict):
     try:
         df = pd.DataFrame([signal])
         df.to_csv('logs/signals_log_new.csv', mode='a', index=False, header=not pd.io.common.file_exists('logs/signals_log_new.csv'))
-        log.info("Signal logged to CSV")
+        log.info("Signal logged to logs/signals_log_new.csv")
     except Exception as e:
         log.error(f"Error saving signal to CSV: {str(e)}")
 
@@ -124,7 +125,7 @@ async def process_symbol(symbol: str):
     if symbol in cooldowns:
         cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
         if datetime.utcnow() < cooldown_end:
-            log.info(f"[{symbol}] In cooldown until {cooldown_end}")
+            log.info(f"[{symbol}] In cooldown until {cooldown_end} for all timeframes")
             return
     
     log.info(f"[{symbol}] Starting multi-timeframe analysis")
@@ -149,17 +150,17 @@ async def process_symbol(symbol: str):
             if symbol in cooldowns:
                 cooldown_end = cooldowns[symbol] + timedelta(seconds=COOLDOWN_PERIOD)
                 if datetime.utcnow() < cooldown_end:
-                    log.info(f"[{symbol}] Signal skipped due to cooldown")
+                    log.info(f"[{symbol}] Signal skipped due to cooldown until {cooldown_end}")
                     return
             
             cooldowns[symbol] = datetime.utcnow()
-            log.info(f"[{symbol}] Added to cooldown for {COOLDOWN_PERIOD/3600} hours")
+            log.info(f"[{symbol}] Added to cooldown for all timeframes for {COOLDOWN_PERIOD/3600} hours")
             
             best_signal['trade_type'] = "Normal" if best_signal['confidence'] >= 80 else "Scalping"
             best_signal['timestamp'] = pd.Timestamp.now()
             
             await send_telegram_signal(symbol, best_signal)
-            log.info(f"[{symbol}] Telegram signal sent")
+            log.info(f"[{best_signal['symbol']}] Telegram signal sent successfully")
             await save_signal_to_csv(best_signal)
             log.info(f"✅ Signal SENT ✅")
         else:
@@ -185,12 +186,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log.info("Received /help command")
     help_msg = (
         "Available Commands:\n"
-        "/start - Start the bot\n"
-        "/help - Show commands\n"
-        "/report - Daily signal report\n"
-        "/signals - Latest signals\n"
-        "/status - Bot status\n"
-        "/summary - Signal summary"
+        "/start - Start the bot and get welcome message\n"
+        "/help - Show available commands and usage\n"
+        "/report - Generate and send the daily signal report\n"
+        "/signals - Display latest trading signals\n"
+        "/status - Check bot status and health\n"
+        "/summary - Show summary of recent signals"
     )
     await context.bot.send_message(chat_id=chat_id, text=help_msg)
 
@@ -231,8 +232,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     memory = psutil.virtual_memory()
     status_msg = (
         f"Bot Status:\n"
-        f"Health: {'Healthy' if memory.percent < 90 else 'Unhealthy'}\n"
+        f"Health: {'Healthy' if memory.percent < 85 else 'Unhealthy'}\n"
         f"Memory Usage: {memory.percent}%\n"
+        f"Uptime: {datetime.utcnow() - pd.Timestamp.now(tz='UTC')}\n"
         f"Symbols Scanned: {SYMBOL_LIMIT}\n"
         f"Timeframes: {', '.join(TIMEFRAMES)}"
     )
@@ -255,8 +257,8 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Signal Summary:\n"
                 f"Total Signals: {total_signals}\n"
                 f"Pending: {pending}\n"
-                f"Successful: {success}\n"
-                f"Failed: {failed}\n"
+                f"Successful (TP Hit): {success}\n"
+                f"Failed (SL Hit): {failed}\n"
                 f"Average Confidence: {avg_confidence:.2f}%"
             )
         else:
@@ -271,11 +273,12 @@ async def scan_symbols():
     
     for symbol in symbols:
         try:
-            await process_symbol(symbol)
-            await asyncio.sleep(900)  # 15 منٹ تاخیر
+            async with httpx.AsyncClient() as client:
+                await process_symbol(symbol)
+            await asyncio.sleep(600)
         except Exception as e:
             log.error(f"Error processing {symbol}: {str(e)}")
-    await asyncio.sleep(7200)  # 2 گھنٹے تاخیر
+    await asyncio.sleep(3600)
 
 async def run_scanner():
     try:
@@ -283,25 +286,25 @@ async def run_scanner():
         async def daily_report():
             try:
                 await generate_daily_summary()
-                log.info("Daily summary sent")
+                log.info("Daily summary generated and sent")
             except Exception as e:
                 log.error(f"Daily report error: {str(e)}")
         while True:
             try:
                 await scan_symbols()
-                log.info("Scan complete, waiting...")
+                log.info("Scan complete, waiting for next cycle...")
                 now = datetime.utcnow()
                 if now.hour == 23 and now.minute == 59:
                     await daily_report()
                 await asyncio.sleep(60)
             except Exception as e:
-                log.error(f"Scan cycle error: {str(e)}")
-                await asyncio.sleep(7200)
+                log.error(f"Error in scan cycle: {str(e)}")
+                await asyncio.sleep(3600)
     except Exception as e:
-        log.error(f"Scanner error: {str(e)}")
-        await asyncio.sleep(7200)
+        log.error(f"Error in scanner: {str(e)}")
+        await asyncio.sleep(3600)
 
-async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
+async def run_telegram_polling(telegram_app: Application, max_retries: int = 15):
     for attempt in range(max_retries):
         try:
             if not await delete_webhook():
@@ -312,10 +315,21 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
                 response = await client.get(url)
                 if response.status_code == 200 and response.json().get("ok"):
-                    log.info("Pending updates cleared")
+                    log.info("Pending updates cleared via getUpdates")
                 else:
-                    log.warning(f"Failed to clear updates: {response.text}")
+                    log.warning(f"Failed to clear pending updates: {response.text}")
             
+            for _ in range(3):
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
+                    response = await client.get(url)
+                    if response.status_code == 200:
+                        log.info("Additional pending updates cleared")
+                    else:
+                        log.warning(f"Failed to clear additional updates: {response.text}")
+                await asyncio.sleep(1)
+            
+            await asyncio.sleep(2)
             await telegram_app.initialize()
             await telegram_app.start()
             await telegram_app.updater.start_polling(
@@ -324,20 +338,27 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 5):
                 timeout=30,
                 poll_interval=1.0
             )
-            log.info("Telegram polling started")
+            log.info("Telegram polling started successfully")
             return
         except Conflict as e:
             log.error(f"Polling conflict (attempt {attempt + 1}/{max_retries}): {str(e)}")
             await delete_webhook()
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
+                response = await client.get(url)
+                if response.status_code == 200:
+                    log.info("Pending updates cleared during conflict retry")
+                else:
+                    log.warning(f"Failed to clear updates during conflict: {response.text}")
             await telegram_app.stop()
             await telegram_app.shutdown()
             await asyncio.sleep(5 * (attempt + 1))
         except Exception as e:
-            log.error(f"Polling error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            log.error(f"Error in Telegram polling (attempt {attempt + 1}/{max_retries}): {str(e)}")
             await telegram_app.stop()
             await telegram_app.shutdown()
             await asyncio.sleep(5 * (attempt + 1))
-    log.error("Failed to start polling after retries")
+    log.error("Failed to start Telegram polling after maximum retries")
     raise RuntimeError("Could not start Telegram polling")
 
 @app.on_event("startup")
@@ -345,7 +366,7 @@ async def startup_event():
     log.info("Starting bot...")
     try:
         await EXCHANGE.load_markets()
-        log.info("Binance API connected")
+        log.info("Binance API connection successful")
         await delete_webhook()
         
         telegram_app = Application.builder().token(BOT_TOKEN).build()
@@ -360,7 +381,7 @@ async def startup_event():
         asyncio.create_task(run_telegram_polling(telegram_app))
         asyncio.create_task(run_scanner())
     except Exception as e:
-        log.error(f"Startup error: {str(e)}")
+        log.error(f"Error in startup: {str(e)}")
         await EXCHANGE.close()
         raise
 
@@ -369,7 +390,7 @@ async def shutdown_event():
     log.info("Shutting down")
     try:
         await EXCHANGE.close()
-        log.info("Binance connection closed")
+        log.info("Binance API connection closed successfully")
     except Exception as e:
         log.error(f"Error closing resources: {str(e)}")
 
@@ -377,12 +398,12 @@ async def shutdown_event():
 async def health_check():
     try:
         memory = psutil.virtual_memory()
-        if memory.percent > 90:
+        if memory.percent > 85:
             log.error(f"Health check failed: High memory usage {memory.percent}%")
             return {"status": "unhealthy", "error": f"High memory usage {memory.percent}%"}, 500
         if EXCHANGE is None or not hasattr(EXCHANGE, 'markets'):
-            log.error("Health check failed: Exchange not initialized")
-            return {"status": "unhealthy", "error": "Exchange not initialized"}, 500
+            log.error("Health check failed: Exchange not initialized or markets not loaded")
+            return {"status": "unhealthy", "error": "Exchange not initialized or markets not loaded"}, 500
         log.info("Health check passed")
         return {"status": "healthy", "timestamp": str(datetime.utcnow())}
     except Exception as e:
