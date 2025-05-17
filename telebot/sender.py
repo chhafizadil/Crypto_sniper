@@ -47,43 +47,38 @@ async def start_bot():
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         bot = telegram.Bot(token=bot_token)
         
-        # Delete webhook to ensure polling mode
+        # Forcefully delete webhook and clear pending updates
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("Telegram webhook deleted successfully")
         
-        # Confirm webhook is deleted
+        # Verify webhook is deleted
         webhook_info = await bot.get_webhook_info()
         if not webhook_info.url:
             logger.info("Webhook confirmed deleted with no pending updates")
         
-        # Clear any pending updates
-        await bot.get_updates(offset=-1)
-        logger.info("Pending updates cleared via getUpdates")
+        # Clear all pending updates with retries
+        for _ in range(3):  # Retry 3 times
+            try:
+                await bot.get_updates(offset=-1, timeout=5)
+                logger.info("Pending updates cleared via getUpdates")
+                break
+            except Conflict as e:
+                logger.warning(f"Conflict while clearing updates: {str(e)}")
+                await asyncio.sleep(1)
         
-        # Start polling with Application
+        # Start polling with single instance
         application = Application.builder().token(bot_token).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("summary", summary))
         
-        # Start polling with error handling
-        try:
-            await application.initialize()
-            await application.start()
-            await application.updater.start_polling(
-                drop_pending_updates=True,
-                poll_interval=1.0,
-                timeout=10,
-                error_callback=lambda e: logger.error(f"Polling error: {str(e)}")
-            )
-            logger.info("Telegram polling started successfully")
-        except Conflict as e:
-            logger.error(f"Conflict in polling: {str(e)}. Ensure only one bot instance is running.")
-            # Attempt to recover by clearing updates
-            await bot.get_updates(offset=-1)
-            await application.updater.start_polling(
-                drop_pending_updates=True,
-                poll_interval=1.0,
-                timeout=10
-            )
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(
+            drop_pending_updates=True,
+            poll_interval=2.0,  # Increased interval to reduce conflicts
+            timeout=10,
+            error_callback=lambda e: logger.error(f"Polling error: {str(e)}")
+        )
+        logger.info("Telegram polling started successfully")
     except Exception as e:
         logger.error(f"Error starting Telegram bot: {str(e)}")
