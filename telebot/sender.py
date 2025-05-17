@@ -1,5 +1,6 @@
 import os
 import telegram
+import asyncio  # شامل کیا
 from telegram.ext import Application, CommandHandler
 from telegram.error import Conflict
 from utils.logger import logger
@@ -57,14 +58,14 @@ async def start_bot():
             logger.info("Webhook confirmed deleted with no pending updates")
         
         # Clear all pending updates with retries
-        for _ in range(3):  # Retry 3 times
+        for _ in range(5):  # Retry 5 times
             try:
                 await bot.get_updates(offset=-1, timeout=5)
                 logger.info("Pending updates cleared via getUpdates")
                 break
             except Conflict as e:
                 logger.warning(f"Conflict while clearing updates: {str(e)}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)  # بڑھایا
         
         # Start polling with single instance
         application = Application.builder().token(bot_token).build()
@@ -75,7 +76,7 @@ async def start_bot():
         await application.start()
         await application.updater.start_polling(
             drop_pending_updates=True,
-            poll_interval=2.0,  # Increased interval to reduce conflicts
+            poll_interval=3.0,  # بڑھایا
             timeout=10,
             error_callback=lambda e: logger.error(f"Polling error: {str(e)}")
         )
