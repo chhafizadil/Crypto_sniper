@@ -1,6 +1,6 @@
 import pandas as pd
 import ccxt.async_support as ccxt
-from utils.logger import log
+from utils.logger import logger
 import asyncio
 import ta
 
