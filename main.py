@@ -17,6 +17,8 @@ from telegram.error import Conflict
 from dotenv import load_dotenv
 import os
 
+# .env فائل لوڈ کرو
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +33,7 @@ log = logging.getLogger("crypto-signal-bot")
 app = FastAPI()
 
 EXCHANGE = ccxt.binance()
-SYMBOL_LIMIT = 300
+SYMBOL_LIMIT = 200
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0
