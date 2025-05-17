@@ -102,7 +102,7 @@ async def get_high_volume_symbols(exchange, min_volume):
             return None
 
     # Process symbols in batches of 50
-    batch_size = 50
+    batch_size = 20
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i + batch_size]
         tasks = [fetch_ticker(symbol) for symbol in batch]
@@ -113,7 +113,7 @@ async def get_high_volume_symbols(exchange, min_volume):
                 high_volume_symbols.append(symbol)
                 logger.info(f"[{symbol}] Passed volume filter: ${quote_volume:,.2f} >= ${min_volume:,.0f}")
         # Add small delay between batches to prevent overloading Koyeb
-        await asyncio.sleep(2)  # 2-second delay between batches
+        await asyncio.sleep(5)  # 2-second delay between batches
 
     return high_volume_symbols
 
