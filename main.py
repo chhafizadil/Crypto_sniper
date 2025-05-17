@@ -17,8 +17,6 @@ from telegram.error import Conflict
 from dotenv import load_dotenv
 import os
 
-# .env فائل لوڈ کرو
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
