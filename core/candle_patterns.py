@@ -1,119 +1,123 @@
 import pandas as pd
-import numpy as np
+from utils.logger import logger
 
 def is_bullish_engulfing(df):
     try:
         if len(df) < 2:
-            return pd.Series(0.0, index=df.index, dtype="float32")
-        close = df['close']
-        open_ = df['open']
+            return [False] * len(df)
+        prev_candle = df.shift(1)
         conditions = (
-            (close > open_) &
-            (open_.shift(1) > close.shift(1)) &
-            (close > open_.shift(1)) &
-            (open_ < close.shift(1))
+            (prev_candle['close'] < prev_candle['open']) &
+            (df['close'] > df['open']) &
+            (df['open'] <= prev_candle['close']) &
+            (df['close'] >= prev_candle['open'])
         )
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        logger.info("Bullish engulfing pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_bullish_engulfing: {str(e)}")
+        return [False] * len(df)
 
 def is_bearish_engulfing(df):
     try:
         if len(df) < 2:
-            return pd.Series(0.0, index=df.index, dtype="float32")
-        close = df['close']
-        open_ = df['open']
+            return [False] * len(df)
+        prev_candle = df.shift(1)
         conditions = (
-            (close < open_) &
-            (open_.shift(1) < close.shift(1)) &
-            (close < open_.shift(1)) &
-            (open_ > close.shift(1))
+            (prev_candle['close'] > prev_candle['open']) &
+            (df['close'] < df['open']) &
+            (df['open'] >= prev_candle['close']) &
+            (df['close'] <= prev_candle['open'])
         )
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        logger.info("Bearish engulfing pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_bearish_engulfing: {str(e)}")
+        return [False] * len(df)
 
 def is_doji(df):
     try:
-        close = df['close']
-        open_ = df['open']
-        high = df['high']
-        low = df['low']
-        body = abs(close - open_)
-        range_ = high - low
-        conditions = (body <= 0.1 * range_)
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        body = abs(df['close'] - df['open'])
+        range_candle = df['high'] - df['low']
+        conditions = (body <= range_candle * 0.1) & (range_candle > 0)
+        logger.info("Doji pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_doji: {str(e)}")
+        return [False] * len(df)
 
 def is_hammer(df):
     try:
-        close = df['close']
-        open_ = df['open']
-        high = df['high']
-        low = df['low']
-        body = abs(close - open_)
-        lower_shadow = open_.where(close > open_, close) - low
-        upper_shadow = high - close.where(close > open_, open_)
-        range_ = high - low
+        body = abs(df['close'] - df['open'])
+        lower_shadow = df['open'].where(df['close'] >= df['open'], df['close']) - df['low']
+        upper_shadow = df['high'] - df['close'].where(df['close'] >= df['open'], df['open'])
+        range_candle = df['high'] - df['low']
         conditions = (
-            (lower_shadow > 2 * body) &
-            (upper_shadow < 0.3 * body) &
-            (range_ > 0)
+            (lower_shadow >= 2 * body) &
+            (upper_shadow <= body * 0.5) &
+            (range_candle > 0)
         )
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        logger.info("Hammer pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_hammer: {str(e)}")
+        return [False] * len(df)
 
 def is_shooting_star(df):
     try:
-        close = df['close']
-        open_ = df['open']
-        high = df['high']
-        low = df['low']
-        body = abs(close - open_)
-        upper_shadow = high - close.where(close > open_, open_)
-        lower_shadow = open_.where(close > open_, close) - low
-        range_ = high - low
+        body = abs(df['close'] - df['open'])
+        upper_shadow = df['high'] - df['close'].where(df['close'] >= df['open'], df['open'])
+        lower_shadow = df['open'].where(df['close'] >= df['open'], df['close']) - df['low']
+        range_candle = df['high'] - df['low']
         conditions = (
-            (upper_shadow > 2 * body) &
-            (lower_shadow < 0.3 * body) &
-            (range_ > 0)
+            (upper_shadow >= 2 * body) &
+            (lower_shadow <= body * 0.5) &
+            (range_candle > 0)
         )
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        logger.info("Shooting star pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_shooting_star: {str(e)}")
+        return [False] * len(df)
 
 def is_three_white_soldiers(df):
     try:
         if len(df) < 3:
-            return pd.Series(0.0, index=df.index, dtype="float32")
-        close = df['close']
-        open_ = df['open']
+            return [False] * len(df)
+        candle_1 = df.shift(2)
+        candle_2 = df.shift(1)
         conditions = (
-            (close > open_) &
-            (close.shift(1) > open_.shift(1)) &
-            (close.shift(2) > open_.shift(2)) &
-            (close > close.shift(1)) &
-            (close.shift(1) > close.shift(2))
+            (candle_1['close'] > candle_1['open']) &
+            (candle_2['close'] > candle_2['open']) &
+            (df['close'] > df['open']) &
+            (candle_2['close'] > candle_1['close']) &
+            (df['close'] > candle_2['close']) &
+            (candle_2['open'] > candle_1['open']) &
+            (df['open'] > candle_2['open'])
         )
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        logger.info("Three white soldiers pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_three_white_soldiers: {str(e)}")
+        return [False] * len(df)
 
 def is_three_black_crows(df):
     try:
         if len(df) < 3:
-            return pd.Series(0.0, index=df.index, dtype="float32")
-        close = df['close']
-        open_ = df['open']
+            return [False] * len(df)
+        candle_1 = df.shift(2)
+        candle_2 = df.shift(1)
         conditions = (
-            (close < open_) &
-            (close.shift(1) < open_.shift(1)) &
-            (close.shift(2) < open_.shift(2)) &
-            (close < close.shift(1)) &
-            (close.shift(1) < close.shift(2))
+            (candle_1['close'] < candle_1['open']) &
+            (candle_2['close'] < candle_2['open']) &
+            (df['close'] < df['open']) &
+            (candle_2['close'] < candle_1['close']) &
+            (df['close'] < candle_2['close']) &
+            (candle_2['open'] < candle_1['open']) &
+            (df['open'] < candle_2['open'])
         )
-        return pd.Series(conditions, index=df.index, dtype="float32").fillna(0.0)
+        logger.info("Three black crows pattern calculated")
+        return conditions
     except Exception as e:
-        return pd.Series(0.0, index=df.index, dtype="float32")
+        logger.error(f"Error in is_three_black_crows: {str(e)}")
+        return [False] * len(df)
