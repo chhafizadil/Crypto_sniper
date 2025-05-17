@@ -143,7 +143,7 @@ async def main_loop():
 
             # Process filtered symbols in batches of 25, up to 100 symbols
             batch_size = 25
-            selected_symbols = high_volume_symbols[:100]  # Limit to 100 symbols as requested
+            selected_symbols = high_volume_symbols[:50]  # Limit to 50 symbols 
             for i in range(0, len(selected_symbols), batch_size):
                 batch = selected_symbols[i:i + batch_size]
                 tasks = [process_symbol(symbol, exchange, timeframes) for symbol in batch]
