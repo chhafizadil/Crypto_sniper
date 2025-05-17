@@ -1,11 +1,11 @@
-# core/analysis.py
 from typing import Dict, List, Optional
 from model.predictor import SignalPredictor
 import pandas as pd
 import numpy as np
 from utils.logger import logger
+from core.multi_timeframe import multi_timeframe_boost
 
-async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List[str], predictor: SignalPredictor, bars: int = 100) -> Optional[Dict]:
+async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List[str], predictor: SignalPredictor, bars: int = 200) -> Optional[Dict]:
     try:
         signals = []
         timeframe_data = {}
@@ -40,12 +40,18 @@ async def analyze_symbol_multi_timeframe(exchange, symbol: str, timeframes: List
                 if df.empty or len(df) < 20:
                     logger.warning(f"[{symbol}] Insufficient data after indicators for {timeframe}")
                     continue
-                if df[['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr', 'bb_upper', 'bb_lower', 'ema_fast', 'ema_slow', 'stoch_k']].isna().any().any():
+                required_indicators = ['rsi', 'volume_sma_20', 'macd', 'macd_signal', 'atr', 'bb_upper', 'bb_lower',
+                                      'ema_fast', 'ema_slow', 'stoch_k', 'adx', 'obv', 'cci', 'mfi', 'vwap',
+                                      'ichimoku_a', 'ichimoku_b', 'williams_r', 'parabolic_sar']
+                if df[required_indicators].isna().any().any():
                     logger.warning(f"[{symbol}] NaN values in indicators for {timeframe}")
                     continue
                 
                 signal = await predictor.predict_signal(symbol, df, timeframe)
                 if signal:
+                    # Apply multi-timeframe boost
+                    boost = await multi_timeframe_boost(symbol, exchange, signal['direction'])
+                    signal['confidence'] = min(signal['confidence'] + boost, 100)
                     signals.append(signal)
             except Exception as e:
                 logger.error(f"[{symbol}] Error in analysis for {timeframe}: {str(e)}")
