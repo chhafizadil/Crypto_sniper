@@ -11,7 +11,6 @@ from telebot.report_generator import generate_daily_summary
 from datetime import datetime, timedelta
 import httpx
 import psutil
-import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.error import Conflict
@@ -34,8 +33,8 @@ TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0
 COOLDOWN_PERIOD = 21600
-
-
+BOT_TOKEN = "7620836100:AAGY7xBjNJMKlzrDDMrQ5hblXzd_k_BvEtU"  # ہارڈ کوڈ ٹوکن
+CHAT_ID = "-4694205383"  # ہارڈ کوڈ CHAT_ID
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
@@ -391,7 +390,7 @@ async def shutdown_event():
     log.info("Shutting down")
     try:
         await EXCHANGE.close()
-        log.info("Binance connection closed successfully")
+        log.info("Binance API connection closed successfully")
     except Exception as e:
         log.error(f"Error closing resources: {str(e)}")
 
