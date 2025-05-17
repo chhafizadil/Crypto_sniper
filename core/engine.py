@@ -2,7 +2,7 @@ import asyncio
 import ccxt.async_support as ccxt
 from core.analysis import analyze_symbol
 from core.whale_detector import detect_whale_activity
-from utils.logger import log
+from utils.logger import logger
 import pandas as pd
 import psutil
 from telegram import Bot
