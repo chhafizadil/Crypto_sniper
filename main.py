@@ -14,6 +14,10 @@ import psutil
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.error import Conflict
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,14 +31,18 @@ log = logging.getLogger("crypto-signal-bot")
 
 app = FastAPI()
 
-EXCHANGE = ccxt.binance()
+EXCHANGE = ccxt.binance({
+    "enableRateLimit": True,
+    "apiKey": os.getenv("BINANCE_API_KEY"),
+    "secret": os.getenv("BINANCE_API_SECRET")
+})
 SYMBOL_LIMIT = 300
 TIMEFRAMES = ["15m", "1h", "4h", "1d"]
 MIN_VOLUME = 1000000
 CONFIDENCE_THRESHOLD = 70.0
 COOLDOWN_PERIOD = 21600
-BOT_TOKEN = "7620836100:AAGY7xBjNJMKlzrDDMrQ5hblXzd_k_BvEtU"  # ہارڈ کوڈ ٹوکن
-CHAT_ID = "-4694205383"  # ہارڈ کوڈ CHAT_ID
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 predictor = SignalPredictor()
 log.info("Signal Predictor initialized successfully")
@@ -81,12 +89,13 @@ async def delete_webhook(max_retries: int = 5):
     log.error("Failed to delete webhook after maximum retries")
     return False
 
-async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 100) -> pd.DataFrame:
+async def fetch_ohlcv(symbol: str, timeframe: str, limit: int = 200) -> pd.DataFrame:
     for attempt in range(3):
         try:
             ohlcv = await EXCHANGE.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.dropna(inplace=True)
             return df
         except ccxt.RateLimitExceeded:
             log.warning(f"[{symbol}] Rate limit exceeded for {timeframe}, retrying in 10s")
@@ -139,7 +148,7 @@ async def process_symbol(symbol: str):
             log.warning(f"[{symbol}] No OHLCV data for {timeframe}")
     
     if not timeframe_data:
-        log.warning(f"[{symbol}] No data available for any timeframe")
+        log.warning(f"[{symbol}] Nomeantime No data available for any timeframe")
         return
     
     result = await analyze_symbol_multi_timeframe(EXCHANGE, symbol, TIMEFRAMES, predictor)
@@ -156,7 +165,6 @@ async def process_symbol(symbol: str):
             cooldowns[symbol] = datetime.utcnow()
             log.info(f"[{symbol}] Added to cooldown for all timeframes for {COOLDOWN_PERIOD/3600} hours")
             
-            best_signal['trade_type'] = "Normal" if best_signal['confidence'] >= 80 else "Scalping"
             best_signal['timestamp'] = pd.Timestamp.now()
             
             await send_telegram_signal(symbol, best_signal)
@@ -250,7 +258,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not df.empty:
             total_signals = len(df)
             pending = len(df[df['status'] == 'pending'])
-            success = len(df[df['status'].isin(['tpDerek', 'tp2', 'tp3'])])
+            success = len(df[df['status'].isin(['tp1', 'tp2', 'tp3'])])
             failed = len(df[df['status'] == 'sl'])
             avg_confidence = df['confidence'].mean()
             summary_msg = (
@@ -344,7 +352,7 @@ async def run_telegram_polling(telegram_app: Application, max_retries: int = 15)
             log.error(f"Polling conflict (attempt {attempt + 1}/{max_retries}): {str(e)}")
             await delete_webhook()
             async with httpx.AsyncClient(timeout=30.0) as client:
-                url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1"
+                url = f"https:// [invalid URL removed] /getUpdates?offset=-1"
                 response = await client.get(url)
                 if response.status_code == 200:
                     log.info("Pending updates cleared during conflict retry")
