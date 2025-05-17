@@ -14,7 +14,7 @@ load_dotenv()
 app = FastAPI()
 
 # ==================== ⚙️ CONFIGURATION ==================== 
-MIN_QUOTE_VOLUME = 1000000
+MIN_QUOTE_VOLUME = 500000
 MIN_CONFIDENCE = 70
 COOLDOWN_HOURS = 6
 
