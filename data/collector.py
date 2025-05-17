@@ -1,7 +1,7 @@
 import asyncio
 import ccxt.async_support as ccxt
 import pandas as pd
-from utils.logger import log
+from utils.logger import logger
 import cachetools
 
 data_cache = cachetools.TTLCache(maxsize=100, ttl=300)  # 5-minute cache
