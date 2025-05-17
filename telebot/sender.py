@@ -1,11 +1,14 @@
-# telebot/sender.py
 import httpx
 import asyncio
 import pandas as pd
 from utils.logger import logger
+from dotenv import load_dotenv
+import os
 
-BOT_TOKEN = "7620836100:AAEEe4yAP18Lxxj0HoYfH8aeX4PetAxYsV0"
-CHAT_ID = "-4694205383"
+load_dotenv()
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 async def send_telegram_signal(symbol: str, signal: dict):
     try:
