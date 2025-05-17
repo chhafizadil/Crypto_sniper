@@ -14,11 +14,10 @@ load_dotenv()
 app = FastAPI()
 
 # ==================== ⚙️ CONFIGURATION ==================== 
-MIN_QUOTE_VOLUME = 1000000  # 3 million USD minimum volume
-MIN_CONFIDENCE = 70         # 80% minimum confidence
-COOLDOWN_HOURS = 6          # 6 hours cooldown between signals
+MIN_QUOTE_VOLUME = 1000000
+MIN_CONFIDENCE = 70
+COOLDOWN_HOURS = 6
 
-# Memory-based cooldown tracking
 cooldowns = {}
 
 # ==================== 📊 DATA HANDLING ==================== 
@@ -28,7 +27,7 @@ def save_signal_to_csv(signal):
         file_path = 'logs/signals_log_new.csv'
         df = pd.DataFrame([signal])
         df.to_csv(file_path, mode='a', index=False, 
-                 header=not os.path.exists(file_path))
+                  header=not os.path.exists(file_path))
         logger.info(f"Signal saved to CSV: {signal['symbol']} at {signal['timestamp']}")
     except Exception as e:
         logger.error(f"Error saving signal to CSV for {signal['symbol']}: {str(e)}")
@@ -58,12 +57,16 @@ async def process_symbol(symbol, exchange, timeframes):
     try:
         if is_symbol_on_cooldown(symbol):
             return
-        
+
         logger.info(f"[{symbol}] Starting multi-timeframe analysis")
         signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
-        
+
         for timeframe, signal in signals.items():
-            if signal and signal['confidence'] >= MIN_CONFIDENCE:  # 80% confidence check
+            if signal:
+                # ✅ New line added as per your request
+                logger.info(f"[{symbol}] {timeframe} → Confidence: {signal.get('confidence')}% | Direction: {signal.get('direction')}")
+
+            if signal and signal['confidence'] >= MIN_CONFIDENCE:
                 signal['timestamp'] = datetime.now().isoformat()
                 signal['status'] = 'pending'
                 signal['hit_timestamp'] = None
@@ -74,7 +77,7 @@ async def process_symbol(symbol, exchange, timeframes):
                 break
         else:
             logger.info(f"[{symbol}] No valid signals across any timeframe (Confidence < {MIN_CONFIDENCE}%)")
-            
+
     except Exception as e:
         logger.error(f"[{symbol}] Error processing symbol: {str(e)}")
 
@@ -82,20 +85,20 @@ async def process_symbol(symbol, exchange, timeframes):
 async def get_high_volume_symbols(exchange, min_volume):
     symbols = [s for s in exchange.symbols if s.endswith('/USDT')]
     high_volume_symbols = []
-    
+
     for symbol in symbols:
         try:
             ticker = await exchange.fetch_ticker(symbol)
             quote_volume = ticker.get('quoteVolume', 0)
-            
+
             if quote_volume >= min_volume:
                 high_volume_symbols.append(symbol)
             else:
                 logger.warning(f"[{symbol}] Skipped: Low volume (${quote_volume:,.2f} < ${min_volume:,.0f})")
-                
+
         except Exception as e:
             logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
-    
+
     return high_volume_symbols
 
 # ==================== 🔄 MAIN LOOP ==================== 
@@ -111,15 +114,15 @@ async def main_loop():
 
         timeframes = ['15m', '1h', '4h', '1d']
         high_volume_symbols = await get_high_volume_symbols(exchange, MIN_QUOTE_VOLUME)
-        
+
         logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= ${MIN_QUOTE_VOLUME:,.0f}")
-        
+
         while True:
-            tasks = [process_symbol(symbol, exchange, timeframes) 
-                   for symbol in high_volume_symbols[:500]]  # Process first 200 symbols
+            tasks = [process_symbol(symbol, exchange, timeframes)
+                     for symbol in high_volume_symbols[:200]]
             await asyncio.gather(*tasks)
             await asyncio.sleep(60)
-            
+
     except Exception as e:
         logger.error(f"Error in main loop: {str(e)}")
     finally:
