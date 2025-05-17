@@ -113,10 +113,10 @@ async def main_loop():
             except Exception as e:
                 logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
         
-        logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $500000")
+        logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= $5000")
         
         while True:
-            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:100]]
+            tasks = [process_symbol(symbol, exchange, timeframes) for symbol in high_volume_symbols[:200]]
             await asyncio.gather(*tasks)
             await asyncio.sleep(60)
     except Exception as e:
