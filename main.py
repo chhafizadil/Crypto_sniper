@@ -10,15 +10,12 @@ from utils.logger import logger
 
 app = FastAPI()
 
-# ==================== ⚙️ CONFIGURATION ==================== 
-MIN_QUOTE_VOLUME = 500000  # Minimum quote volume for filtering symbols ($500,000)
-MIN_CONFIDENCE = 50  # Minimum confidence for valid signals
-COOLDOWN_HOURS = 6  # Cooldown period for symbols after generating a signal
-# Configuration for volume filtering and signal confidence threshold
+MIN_QUOTE_VOLUME = 500000
+MIN_CONFIDENCE = 50
+COOLDOWN_HOURS = 6
 
 cooldowns = {}
 
-# ==================== 📊 DATA HANDLING ==================== 
 def save_signal_to_csv(signal):
     try:
         os.makedirs('logs', exist_ok=True)
@@ -30,7 +27,6 @@ def save_signal_to_csv(signal):
     except Exception as e:
         logger.error(f"Error saving signal to CSV for {signal['symbol']}: {str(e)}")
 
-# ==================== ⏳ COOLDOWN MANAGEMENT ==================== 
 def is_symbol_on_cooldown(symbol):
     try:
         if symbol in cooldowns:
@@ -50,7 +46,6 @@ def update_cooldown(symbol):
     except Exception as e:
         logger.error(f"Error updating cooldown for {symbol}: {str(e)}")
 
-# ==================== 🔍 SYMBOL PROCESSING ==================== 
 async def process_symbol(symbol, exchange, timeframes):
     try:
         if is_symbol_on_cooldown(symbol):
@@ -76,7 +71,6 @@ async def process_symbol(symbol, exchange, timeframes):
     except Exception as e:
         logger.error(f"[{symbol}] Error processing symbol: {str(e)}")
 
-# ==================== 📈 VOLUME FILTERING ==================== 
 async def get_high_volume_symbols(exchange, min_volume):
     symbols = [s for s in exchange.symbols if s.endswith('/USDT')]
     high_volume_symbols = []
@@ -106,7 +100,6 @@ async def get_high_volume_symbols(exchange, min_volume):
         await asyncio.sleep(3)
     return high_volume_symbols
 
-# ==================== 🔄 MAIN LOOP ==================== 
 async def main_loop():
     try:
         exchange = ccxt.binance({
@@ -124,14 +117,14 @@ async def main_loop():
                 logger.warning("No symbols passed volume filter. Retrying in 180 seconds...")
                 await asyncio.sleep(180)
                 continue
-            batch_size = 2  # Reduced to 2 to reduce load
+            batch_size = 1
             selected_symbols = high_volume_symbols[:20]
             for i in range(0, len(selected_symbols), batch_size):
                 batch = selected_symbols[i:i + batch_size]
                 tasks = [process_symbol(symbol, exchange, timeframes) for symbol in batch]
                 await asyncio.gather(*tasks, return_exceptions=True)
                 logger.info(f"Completed analysis batch {i//batch_size + 1}/{len(selected_symbols)//batch_size + 1}")
-                await asyncio.sleep(8)
+                await asyncio.sleep(15)
             logger.info("Completed analysis cycle. Waiting 180 seconds for next cycle...")
             await asyncio.sleep(180)
     except Exception as e:
@@ -139,7 +132,6 @@ async def main_loop():
     finally:
         await exchange.close()
 
-# ==================== 🚀 FASTAPI ENDPOINTS ==================== 
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting bot...")
@@ -148,4 +140,4 @@ async def startup_event():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}  # Removed logging to make it lightweight
+    return {"status": "healthy"}
