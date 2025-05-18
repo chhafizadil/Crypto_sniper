@@ -141,3 +141,15 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+async def test_analysis():
+    symbol = "ADA/USDT"
+    exchange = ccxt.binance({"enableRateLimit": True})
+    timeframes = ["15m"]
+    logger.info(f"Testing analysis for {symbol}")
+    signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
+    logger.info(f"Test analysis results for {symbol}: {signals}")
+    await exchange.close()
+
+if __name__ == "__main__":
+    asyncio.run(test_analysis())
