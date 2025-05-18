@@ -1,4 +1,5 @@
 # Updated model/predictor.py to address TP1 1-2% hit, Trade Duration, soft conditions, MACD zero fix, and Trade Type: None
+# Fixes applied to resolve classify_trade() missing timeframe error and soften TP1 range
 import pandas as pd
 import numpy as np
 import asyncio
@@ -127,30 +128,32 @@ class SignalPredictor:
                 logger.info(f"[{symbol}] No clear direction for {timeframe}")
                 return None
 
-            # Calculate TP/SL for 1-2% TP1
+            # Calculate TP/SL with softened range (0.5-3%)
             atr = latest.get('atr', max(0.1 * latest['close'], 0.02))  # Increased ATR fallback
             entry = current_price
             if direction == "LONG":
-                tp1 = entry + max(0.01 * entry, 0.5 * atr)  # Ensure 1-2% for TP1
+                tp1 = entry + max(0.005 * entry, 0.5 * atr)  # Softened to 0.5-3% for TP1
                 tp2 = entry + max(0.015 * entry, 1.0 * atr)
-                tp3 = entry + max(0.02 * entry, 2.0 * atr)
+                tp3 = entry + max(0.03 * entry, 2.0 * atr)
                 sl = entry - max(0.008 * entry, 0.8 * atr)  # Tight SL
             else:  # SHORT
-                tp1 = entry - max(0.01 * entry, 0.5 * atr)
+                tp1 = entry - max(0.005 * entry, 0.5 * atr)
                 tp2 = entry - max(0.015 * entry, 1.0 * atr)
-                tp3 = entry - max(0.02 * entry, 2.0 * atr)
+                tp3 = entry - max(0.03 * entry, 2.0 * atr)
                 sl = entry + max(0.008 * entry, 0.8 * atr)
 
-            # Ensure TP1 is within 1-2% range
+            # Ensure TP1 is within 0.5-3% range
             tp1_percent = abs(tp1 - entry) / entry * 100
-            if not (1.0 <= tp1_percent <= 2.0):
-                logger.warning(f"[{symbol}] TP1 out of 1-2% range ({tp1_percent:.2f}%), adjusting")
+            if not (0.5 <= tp1_percent <= 3.0):
+                logger.warning(f"[{symbol}] TP1 out of 0.5-3% range ({tp1_percent:.2f}%), adjusting")
                 if direction == "LONG":
                     tp1 = entry + 0.015 * entry  # Set to 1.5%
                 else:
                     tp1 = entry - 0.015 * entry
 
-            trade_type = classify_trade(confidence) or "Scalping"  # Default to Scalping
+            # Fix classify_trade call to include timeframe
+            # This resolves the error: classify_trade() missing 1 required positional argument: 'timeframe'
+            trade_type = classify_trade(confidence, timeframe) or "Scalp"  # Updated to pass timeframe, default to Scalp
 
             signal = {
                 'symbol': symbol,
@@ -169,7 +172,8 @@ class SignalPredictor:
                 'volume': float(latest['volume']),
                 'trade_type': trade_type,
                 'trade_duration': self.get_trade_duration(timeframe),  # Added Trade Duration
-                'timestamp': pd.Timestamp.now().isoformat()
+                'timestamp': pd.Timestamp.now().isoformat(),
+                'macd_status': latest['macd_status']  # Added macd_status for engine validation
             }
 
             logger.info(f"[{symbol}] Signal generated for {timeframe}: {direction}, Confidence: {signal['confidence']}%, TP1: {signal['tp1']:.4f} ({tp1_percent:.2f}%)")
