@@ -1,7 +1,8 @@
+# Updated core/trade_classifier.py to remove Trade Type: None and set default to Scalping
 def classify_trade(confidence):
-    if confidence >= 80:
+    if confidence >= 75:
+        return "Swing"
+    elif 60 <= confidence < 75:
         return "Normal"
-    elif 70 <= confidence < 80:
-        return "Scalping"
     else:
-        return None  # Ignore low-confidence signals
+        return "Scalping"  # Default to Scalping
