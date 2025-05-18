@@ -7,9 +7,6 @@ from datetime import datetime, timedelta
 from core.analysis import analyze_symbol_multi_timeframe
 from telebot.sender import send_signal, start_bot
 from utils.logger import logger
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -18,6 +15,10 @@ MIN_QUOTE_VOLUME = 500000  # Minimum quote volume for filtering symbols ($500,00
 MIN_CONFIDENCE = 50  # Minimum confidence for valid signals (kept at 50 per user request)
 COOLDOWN_HOURS = 6  # Cooldown period for symbols after generating a signal
 # Configuration for volume filtering and signal confidence threshold
+
+# Hard-coded Telegram bot token and chat ID
+BOT_TOKEN = "7620836100:AAGY7xBjNJMKlzrDDMrQ5hblXzd_k_BvEtU"  # Replace with your actual bot token
+CHAT_ID = "-4694205383"      # Replace with your actual chat ID
 
 cooldowns = {}
 
@@ -82,7 +83,7 @@ async def process_symbol(symbol, exchange, timeframes):
                 signal['timestamp'] = datetime.now().isoformat()
                 signal['status'] = 'pending'
                 signal['hit_timestamp'] = None
-                await send_signal(signal)
+                await send_signal(signal, BOT_TOKEN, CHAT_ID)  # Pass hard-coded token and chat ID
                 save_signal_to_csv(signal)
                 update_cooldown(symbol)
                 logger.info(f"[{symbol}] Signal generated for {timeframe}: {signal['direction']} (Confidence: {signal['confidence']}%)")
@@ -184,7 +185,7 @@ async def main_loop():
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting bot...")
-    asyncio.create_task(start_bot())
+    asyncio.create_task(start_bot(BOT_TOKEN, CHAT_ID))  # Pass hard-coded token and chat ID
     asyncio.create_task(main_loop())
     # Start bot and main loop on application startup
 
