@@ -1,4 +1,5 @@
 # Core module for multi-timeframe analysis of trading symbols
+# Updated to add stricter data validation for OHLCV fetching
 import pandas as pd
 import asyncio
 import ccxt.async_support as ccxt
@@ -19,8 +20,9 @@ async def analyze_symbol_multi_timeframe(symbol: str, exchange: ccxt.Exchange, t
                 logger.info(f"[{symbol}] Fetching OHLCV data for {timeframe}")
                 # Fetch OHLCV data with a limit of 50 candles
                 df = await fetch_realtime_data(symbol, timeframe, limit=50)
-                if df is None or len(df) < 50:
-                    logger.warning(f"[{symbol}] Insufficient data for {timeframe}: {len(df) if df is not None else 'None'}")
+                # Stricter validation: ensure dataframe is not empty and has valid price/volume
+                if df is None or len(df) < 50 or df['close'].isnull().any() or (df['close'] <= 0).any() or (df['volume'] <= 0).any():
+                    logger.warning(f"[{symbol}] Invalid or insufficient data for {timeframe}: {len(df) if df is not None else 'None'} rows")
                     signals[timeframe] = None
                     continue
 
