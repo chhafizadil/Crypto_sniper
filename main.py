@@ -16,7 +16,7 @@ app = FastAPI()
 
 # Configuration constants
 MIN_QUOTE_VOLUME = 500000
-MIN_CONFIDENCE = 40  # Lowered to match soft conditions
+MIN_CONFIDENCE = 60  # Lowered to match soft conditions
 COOLDOWN_HOURS = 6
 
 # Cooldown tracking for symbols
