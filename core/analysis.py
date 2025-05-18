@@ -1,3 +1,4 @@
+# Updated core/analysis.py to simplify logging, lower timeframe agreement to 15%, and ensure final signal format
 import pandas as pd
 import asyncio
 import ccxt.async_support as ccxt
@@ -13,20 +14,15 @@ async def analyze_symbol_multi_timeframe(symbol: str, exchange: ccxt.Exchange, t
         for timeframe in timeframes:
             try:
                 logger.info(f"[{symbol}] Fetching OHLCV data for {timeframe}")
-                df = await fetch_realtime_data(symbol, timeframe, limit=50)  # Reduced to 50 candles
-                if df is None or len(df) < 20:
+                df = await fetch_realtime_data(symbol, timeframe, limit=50)
+                if df is None or len(df) < 50:
                     logger.warning(f"[{symbol}] Insufficient data for {timeframe}: {len(df) if df is not None else 'None'}")
                     signals[timeframe] = None
                     continue
 
                 logger.info(f"[{symbol}] OHLCV data fetched for {timeframe}: {len(df)} rows")
                 signal = await predictor.predict_signal(symbol, df, timeframe)
-                if signal:
-                    signals[timeframe] = signal
-                    logger.info(f"[{symbol}] Signal generated for {timeframe}: {signal['direction']}, Confidence: {signal['confidence']}%")
-                else:
-                    signals[timeframe] = None
-                    logger.info(f"[{symbol}] No signal generated for {timeframe}")
+                signals[timeframe] = signal
             except Exception as e:
                 logger.error(f"[{symbol}] Error analyzing {timeframe}: {str(e)}")
                 signals[timeframe] = None
@@ -41,7 +37,7 @@ async def analyze_symbol_multi_timeframe(symbol: str, exchange: ccxt.Exchange, t
         if directions:
             timeframe_agreement = len([d for d in directions if d == directions[0]]) / len(directions)
             logger.info(f"[{symbol}] Timeframe agreement: {timeframe_agreement:.2f}")
-            if timeframe_agreement < 0.25:
+            if timeframe_agreement < 0.15:  # Lowered to 15%
                 logger.info(f"[{symbol}] Insufficient timeframe agreement ({timeframe_agreement:.2f})")
                 return signals
         return signals
