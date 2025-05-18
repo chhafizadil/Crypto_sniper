@@ -15,7 +15,7 @@ app = FastAPI()
 
 # ==================== ⚙️ CONFIGURATION ==================== 
 MIN_QUOTE_VOLUME = 500000  # Minimum quote volume for filtering symbols ($500,000)
-MIN_CONFIDENCE = 60  # Minimum confidence for valid signals (kept at 60 per user request)
+MIN_CONFIDENCE = 50  # Minimum confidence for valid signals (kept at 20 per user request)
 COOLDOWN_HOURS = 6  # Cooldown period for symbols after generating a signal
 
 cooldowns = {}
