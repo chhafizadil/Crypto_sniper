@@ -1,4 +1,5 @@
 # Core engine module for running trading analysis and signal generation
+# Updated to soften TP1 range validation and ensure MACD status consistency
 import asyncio
 import ccxt.async_support as ccxt
 from core.analysis import analyze_symbol_multi_timeframe
@@ -79,13 +80,21 @@ async def run_engine():
                 signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
                 for timeframe, signal in signals.items():
                     if signal and signal['confidence'] >= 40:
-                        # Validate MACD for LONG signals
-                        if signal['direction'] == "LONG" and signal.get('macd_status') == "bearish":
-                            logger.warning(f"[Engine] [{symbol}] Invalid LONG signal with bearish MACD, skipping")
+                        # Validate MACD for LONG/SHORT signals
+                        # Ensures LONG signals require bullish MACD and SHORT require bearish MACD
+                        if signal['direction'] == "LONG" and signal.get('macd_status') != "bullish":
+                            logger.warning(f"[Engine] [{symbol}] Invalid LONG signal with {signal.get('macd_status')} MACD, skipping")
                             continue
-                        # Assign trade type dynamically
-                        signal['trade_type'] = classify_trade(signal['confidence'], timeframe)
-                        # Format signal message
+                        if signal['direction'] == "SHORT" and signal.get('macd_status') != "bearish":
+                            logger.warning(f"[Engine] [{symbol}] Invalid SHORT signal with {signal.get('macd_status')} MACD, skipping")
+                            continue
+                        # Validate TP1 range (softened to 0.5-3%)
+                        tp1_percent = abs(signal['tp1'] - signal['entry']) / signal['entry'] * 100
+                        if not (0.5 <= tp1_percent <= 3.0):
+                            logger.warning(f"[Engine] [{symbol}] TP1 out of 0.5-3% range ({tp1_percent:.2f}%), skipping")
+                            continue
+                        # Assign trade type dynamically (already handled in predictor.py)
+                        # Format signal message with trade duration
                         message = (
                             f"🚨 {symbol} Trading Signal\n"
                             f"📊 Direction: {signal['direction']}\n"
@@ -97,6 +106,7 @@ async def run_engine():
                             f"🛑 SL: {signal['sl']:.4f}\n"
                             f"🔍 Confidence: {signal['confidence']:.2f}%\n"
                             f"⚡ Trade Type: {signal['trade_type']}\n"
+                            f"⏳ Trade Duration: {signal['trade_duration']}\n"
                             f"🕒 Timestamp: {signal['timestamp']}"
                         )
                         logger.info(f"[Engine] [{symbol}] Signal generated, sending to Telegram")
