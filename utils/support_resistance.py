@@ -1,6 +1,7 @@
+# Updated utils/support_resistance.py to increase range to 10% and improve validation
 import pandas as pd
 import numpy as np
-from utils.logger import logger  # Changed from 'log' to 'logger'
+from utils.logger import logger
 
 def calculate_support_resistance(symbol: str, df: pd.DataFrame) -> dict:
     try:
@@ -26,6 +27,11 @@ def calculate_support_resistance(symbol: str, df: pd.DataFrame) -> dict:
             support = float(np.mean(support_levels))
         else:
             support = float(recent_df['low'].min())
+            
+        # Validate non-zero support/resistance
+        if support <= 0.01 or resistance <= 0.01:
+            logger.warning(f"[{symbol}] Invalid support/resistance: support={support}, resistance={resistance}")
+            return {'support': 0.0, 'resistance': 0.0}
             
         logger.info(f"[{symbol}] Support: {support}, Resistance: {resistance}")
         return {'support': support, 'resistance': resistance}
