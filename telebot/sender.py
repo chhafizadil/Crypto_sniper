@@ -1,13 +1,13 @@
-import os
 import telegram
-import asyncio  # شامل کیا
+import asyncio
 from telegram.ext import Application, CommandHandler
 from telegram.error import Conflict
 from utils.logger import logger
-from dotenv import load_dotenv
 from telebot.report_generator import generate_daily_summary
 
-load_dotenv()
+# Hard-coded Telegram bot token and chat ID
+BOT_TOKEN = "7620836100:AAGY7xBjNJMKlzrDDMrQ5hblXzd_k_BvEtU"
+CHAT_ID = "-4694205383"
 
 async def start(update, context):
     await update.message.reply_text("Crypto Signal Bot is running! Use /summary to get daily report.")
@@ -21,8 +21,7 @@ async def summary(update, context):
 
 async def send_signal(signal):
     try:
-        bot = telegram.Bot(token=os.getenv('TELEGRAM_BOT_TOKEN'))
-        chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        bot = telegram.Bot(token=BOT_TOKEN)
         
         conditions_str = ", ".join(signal.get('conditions', [])) or "None"
         message = (
@@ -38,15 +37,14 @@ async def send_signal(signal):
             f"Conditions: {conditions_str}\n"
             f"Timestamp: {signal['timestamp']}"
         )
-        await bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
+        await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='Markdown')
         logger.info(f"Signal sent to Telegram: {signal['symbol']} - {signal['direction']}")
     except Exception as e:
         logger.error(f"Error sending signal to Telegram: {str(e)}")
 
 async def start_bot():
     try:
-        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-        bot = telegram.Bot(token=bot_token)
+        bot = telegram.Bot(token=BOT_TOKEN)
         
         # Forcefully delete webhook and clear pending updates
         await bot.delete_webhook(drop_pending_updates=True)
@@ -65,10 +63,10 @@ async def start_bot():
                 break
             except Conflict as e:
                 logger.warning(f"Conflict while clearing updates: {str(e)}")
-                await asyncio.sleep(2)  # بڑھایا
+                await asyncio.sleep(3)  # 3 seconds for stability
         
         # Start polling with single instance
-        application = Application.builder().token(bot_token).build()
+        application = Application.builder().token(BOT_TOKEN).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("summary", summary))
         
@@ -76,8 +74,8 @@ async def start_bot():
         await application.start()
         await application.updater.start_polling(
             drop_pending_updates=True,
-            poll_interval=3.0,  # بڑھایا
-            timeout=10,
+            poll_interval=4.0,  # Stable polling interval
+            timeout=15,  # Increased for better handling
             error_callback=lambda e: logger.error(f"Polling error: {str(e)}")
         )
         logger.info("Telegram polling started successfully")
