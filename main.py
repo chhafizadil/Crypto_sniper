@@ -1,5 +1,6 @@
 # Main module to run the trading bot and handle symbol processing
 # Updated to fix zero price/volume issues and ensure new pairs are loaded
+# Added stronger validation for OHLCV data and market refresh
 import asyncio
 import ccxt.async_support as ccxt
 import pandas as pd
@@ -32,7 +33,7 @@ def save_signal_to_csv(signal):
                   header=not os.path.exists(file_path))
         logger.info(f"Signal saved to CSV: {signal['symbol']} at {signal['timestamp']}")
     except Exception as e:
-        logger.error(f"Error saving signal to CSV for {signal['symbol']}: {str(e)}")
+        logger.error(f"Error saving signal to CSV for {symbol}: {str(e)}")
 
 # Function to check if symbol is on cooldown
 def is_symbol_on_cooldown(symbol):
@@ -91,13 +92,14 @@ async def get_high_volume_symbols(exchange, min_volume):
 
     high_volume_symbols = []
     async def fetch_ticker(symbol):
-        # Fetch ticker data with validation for price and volume
+        # Fetch ticker data with stricter validation for price and volume
         try:
             ticker = await exchange.fetch_ticker(symbol)
             quote_volume = ticker.get('quoteVolume', 0)
             close_price = ticker.get('close', 0)
-            # Validate non-zero price and sufficient volume
-            if quote_volume is not None and quote_volume >= min_volume and close_price is not None and close_price > 0.01:
+            # Stricter validation: ensure non-zero price, volume, and reasonable price range
+            if (quote_volume is not None and quote_volume >= min_volume and 
+                close_price is not None and 0.01 < close_price < 100000):
                 return symbol, quote_volume
             else:
                 logger.warning(f"[{symbol}] Skipped: Low volume (${quote_volume:,.2f} < ${min_volume:,.0f}) or invalid price ({close_price})")
