@@ -1,4 +1,5 @@
-# Updated main.py to add zero price/volume checks, simplify logging, and ensure stable processing
+# Main module to run the trading bot and handle symbol processing
+# Updated to fix zero price/volume issues and ensure new pairs are loaded
 import asyncio
 import ccxt.async_support as ccxt
 import pandas as pd
@@ -9,15 +10,20 @@ from core.analysis import analyze_symbol_multi_timeframe
 from telebot.sender import send_signal, start_bot
 from utils.logger import logger
 
+# Initialize FastAPI app
 app = FastAPI()
 
+# Configuration constants
 MIN_QUOTE_VOLUME = 500000
 MIN_CONFIDENCE = 40  # Lowered to match soft conditions
 COOLDOWN_HOURS = 6
 
+# Cooldown tracking for symbols
 cooldowns = {}
 
+# Function to save signal to CSV
 def save_signal_to_csv(signal):
+    # Ensure logs directory exists and save signal
     try:
         os.makedirs('logs', exist_ok=True)
         file_path = 'logs/signals_log_new.csv'
@@ -28,7 +34,9 @@ def save_signal_to_csv(signal):
     except Exception as e:
         logger.error(f"Error saving signal to CSV for {signal['symbol']}: {str(e)}")
 
+# Function to check if symbol is on cooldown
 def is_symbol_on_cooldown(symbol):
+    # Check if symbol is within cooldown period
     try:
         if symbol in cooldowns:
             last_signal_time = cooldowns[symbol]
@@ -40,14 +48,18 @@ def is_symbol_on_cooldown(symbol):
         logger.error(f"Error checking cooldown for {symbol}: {str(e)}")
         return False
 
+# Function to update cooldown for a symbol
 def update_cooldown(symbol):
+    # Update cooldown timestamp
     try:
         cooldowns[symbol] = datetime.now()
         logger.info(f"[{symbol}] Cooldown updated until {datetime.now() + timedelta(hours=COOLDOWN_HOURS)}")
     except Exception as e:
         logger.error(f"Error updating cooldown for {symbol}: {str(e)}")
 
+# Function to process a symbol
 async def process_symbol(symbol, exchange, timeframes):
+    # Analyze and process signals for a symbol
     try:
         if is_symbol_on_cooldown(symbol):
             return
@@ -66,22 +78,35 @@ async def process_symbol(symbol, exchange, timeframes):
     except Exception as e:
         logger.error(f"[{symbol}] Error processing symbol: {str(e)}")
 
+# Function to fetch high-volume symbols
 async def get_high_volume_symbols(exchange, min_volume):
-    symbols = [s for s in exchange.symbols if s.endswith('/USDT')]
+    # Load fresh markets to ensure new pairs are included
+    try:
+        await exchange.load_markets(reload=True)
+        symbols = [s for s in exchange.markets.keys() if s.endswith('/USDT')]
+        logger.info(f"[Main] Loaded {len(symbols)} USDT pairs from exchange")
+    except Exception as e:
+        logger.error(f"[Main] Error loading markets: {str(e)}")
+        return []
+
     high_volume_symbols = []
     async def fetch_ticker(symbol):
+        # Fetch ticker data with validation for price and volume
         try:
             ticker = await exchange.fetch_ticker(symbol)
             quote_volume = ticker.get('quoteVolume', 0)
             close_price = ticker.get('close', 0)
-            if quote_volume is not None and quote_volume >= min_volume and close_price > 0.01:  # Zero price check
+            # Validate non-zero price and sufficient volume
+            if quote_volume is not None and quote_volume >= min_volume and close_price is not None and close_price > 0.01:
                 return symbol, quote_volume
             else:
-                logger.warning(f"[{symbol}] Skipped: Low volume (${quote_volume:,.2f} < ${min_volume:,.0f}) or zero price ({close_price})")
+                logger.warning(f"[{symbol}] Skipped: Low volume (${quote_volume:,.2f} < ${min_volume:,.0f}) or invalid price ({close_price})")
                 return None
         except Exception as e:
             logger.error(f"[{symbol}] Error fetching ticker: {str(e)}")
             return None
+
+    # Process symbols in batches
     batch_size = 25
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i + batch_size]
@@ -95,23 +120,26 @@ async def get_high_volume_symbols(exchange, min_volume):
         await asyncio.sleep(3)
     return high_volume_symbols
 
+# Main loop for the bot
 async def main_loop():
+    # Initialize Binance exchange
     try:
         exchange = ccxt.binance({
             'apiKey': os.getenv('BINANCE_API_KEY'),
             'secret': os.getenv('BINANCE_API_SECRET'),
             'enableRateLimit': True
         })
-        await exchange.load_markets()
         logger.info("Binance API connection successful")
         timeframes = ['15m', '1h', '4h', '1d']
         while True:
+            # Fetch high-volume symbols
             high_volume_symbols = await get_high_volume_symbols(exchange, MIN_QUOTE_VOLUME)
             logger.info(f"Selected {len(high_volume_symbols)} USDT pairs with volume >= ${MIN_QUOTE_VOLUME:,.0f}")
             if not high_volume_symbols:
                 logger.warning("No symbols passed volume filter. Retrying in 180 seconds...")
                 await asyncio.sleep(180)
                 continue
+            # Process symbols in batches
             batch_size = 1
             selected_symbols = high_volume_symbols[:20]
             for i in range(0, len(selected_symbols), batch_size):
@@ -127,17 +155,22 @@ async def main_loop():
     finally:
         await exchange.close()
 
+# FastAPI startup event
 @app.on_event("startup")
 async def startup_event():
+    # Start bot and main loop
     logger.info("Starting bot...")
     asyncio.create_task(start_bot())
     asyncio.create_task(main_loop())
 
+# Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
+# Test analysis function
 async def test_analysis():
+    # Test analysis for a specific symbol
     symbol = "ADA/USDT"
     exchange = ccxt.binance({"enableRateLimit": True})
     timeframes = ["15m"]
