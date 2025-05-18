@@ -79,7 +79,7 @@ async def run_engine():
                 timeframes = ["15m", "1h", "4h", "1d"]
                 signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
                 for timeframe, signal in signals.items():
-                    if signal and signal['confidence'] >= 40:
+                    if signal and signal['confidence'] >= 60:
                         # Validate MACD for LONG/SHORT signals
                         # Ensures LONG signals require bullish MACD and SHORT require bearish MACD
                         if signal['direction'] == "LONG" and signal.get('macd_status') != "bullish":
