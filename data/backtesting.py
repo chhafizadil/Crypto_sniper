@@ -7,7 +7,7 @@ from utils.logger import logger
 async def backtest_signals(symbol: str, timeframe: str = "15m", limit: int = 1000):
     try:
         logger.info(f"[{symbol}] Starting backtest for {timeframe}")
-        df = await fetch_realtime_data(symbol, timeframe)
+        df = await fetch_realtime_data(symbol, timeframe, limit=limit)  # Use limit=1000
         if df is None or len(df) < 50:
             logger.warning(f"[{symbol}] Insufficient data for backtest")
             return None
