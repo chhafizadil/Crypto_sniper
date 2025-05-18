@@ -1,3 +1,4 @@
+# Updated main.py to add zero price/volume checks, simplify logging, and ensure stable processing
 import asyncio
 import ccxt.async_support as ccxt
 import pandas as pd
@@ -11,7 +12,7 @@ from utils.logger import logger
 app = FastAPI()
 
 MIN_QUOTE_VOLUME = 500000
-MIN_CONFIDENCE = 50
+MIN_CONFIDENCE = 40  # Lowered to match soft conditions
 COOLDOWN_HOURS = 6
 
 cooldowns = {}
@@ -53,10 +54,6 @@ async def process_symbol(symbol, exchange, timeframes):
         logger.info(f"[{symbol}] Starting multi-timeframe analysis")
         signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
         for timeframe, signal in signals.items():
-            if signal:
-                logger.info(f"[{symbol}] {timeframe} → Confidence: {signal.get('confidence')}% | Direction: {signal.get('direction')}")
-            else:
-                logger.info(f"[{symbol}] No signal generated for {timeframe}")
             if signal and signal['confidence'] >= MIN_CONFIDENCE:
                 signal['timestamp'] = datetime.now().isoformat()
                 signal['status'] = 'pending'
@@ -64,10 +61,8 @@ async def process_symbol(symbol, exchange, timeframes):
                 await send_signal(signal)
                 save_signal_to_csv(signal)
                 update_cooldown(symbol)
-                logger.info(f"[{symbol}] Signal generated for {timeframe}: {signal['direction']} (Confidence: {signal['confidence']}%)")
+                logger.info(f"✅ Signal generated for {symbol} ({timeframe}): {signal['direction']} (Confidence: {signal['confidence']:.1f}%, Entry: {signal['entry']:.4f}, TP1: {signal['tp1']:.4f}, TP2: {signal['tp2']:.4f}, TP3: {signal['tp3']:.4f}, SL: {signal['sl']:.4f}, Conditions: {', '.join(signal['conditions'])})")
                 break
-        else:
-            logger.info(f"[{symbol}] No valid signals across any timeframe (Confidence < {MIN_CONFIDENCE}%)")
     except Exception as e:
         logger.error(f"[{symbol}] Error processing symbol: {str(e)}")
 
@@ -78,10 +73,11 @@ async def get_high_volume_symbols(exchange, min_volume):
         try:
             ticker = await exchange.fetch_ticker(symbol)
             quote_volume = ticker.get('quoteVolume', 0)
-            if quote_volume is not None and quote_volume >= min_volume:
+            close_price = ticker.get('close', 0)
+            if quote_volume is not None and quote_volume >= min_volume and close_price > 0.01:  # Zero price check
                 return symbol, quote_volume
             else:
-                logger.warning(f"[{symbol}] Skipped: Low volume (${quote_volume:,.2f} < ${min_volume:,.0f})")
+                logger.warning(f"[{symbol}] Skipped: Low volume (${quote_volume:,.2f} < ${min_volume:,.0f}) or zero price ({close_price})")
                 return None
         except Exception as e:
             logger.error(f"[{symbol}] Error fetching ticker: {str(e)}")
@@ -96,7 +92,6 @@ async def get_high_volume_symbols(exchange, min_volume):
                 symbol, quote_volume = result
                 high_volume_symbols.append(symbol)
                 logger.info(f"[{symbol}] Passed volume filter: ${quote_volume:,.2f} >= ${min_volume:,.0f}")
-        results = None
         await asyncio.sleep(3)
     return high_volume_symbols
 
