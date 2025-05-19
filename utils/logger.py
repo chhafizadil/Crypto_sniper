@@ -1,4 +1,4 @@
-# utils/logger.py
+# Updated logger to ensure robust CSV logging and archiving
 import os
 import logging
 from logging.handlers import RotatingFileHandler
@@ -29,6 +29,8 @@ logger.addHandler(console_handler)
 logger.propagate = False
 
 def log_signal_to_csv(signal):
+    # Updated CSV logging to include all required fields
+    # Fixed issue where CSV could fail due to missing fields
     try:
         csv_path = "logs/signals_log_new.csv"
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
@@ -48,8 +50,10 @@ def log_signal_to_csv(signal):
             "tp3_possibility": [signal.get("tp3_possibility", 0)],
             "conditions": [", ".join(signal.get("conditions", []))],
             "volume": [signal.get("volume", 0)],
+            "quote_volume_24h": [signal.get("quote_volume_24h", 0)],
             "status": [signal.get("status", "pending")],
-            "hit_timestamp": [signal.get("hit_timestamp", None)]
+            "hit_timestamp": [signal.get("hit_timestamp", None)],
+            "leverage": [signal.get("leverage", 10)]
         })
 
         if os.path.exists(csv_path):
@@ -69,6 +73,7 @@ def log_signal_to_csv(signal):
         logger.error(f"Error logging signal to CSV: {e}")
 
 def archive_old_logs(csv_path):
+    # Archive old logs to prevent file size issues
     try:
         if not os.path.exists(csv_path):
             return
