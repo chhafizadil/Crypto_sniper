@@ -65,7 +65,7 @@ def update_cooldown(symbol):
         logger.error(f"Error updating cooldown for {symbol}: {str(e)}")
 
 # Function to fetch BTC market trend
-async def get_btc_trend(exchange):
+async def get_btc_trend(exchange): return (await exchange.fetch_ticker("BTC/USDT")).get('percentage', None)
     # Fetches BTC/USDT 24h price change to determine market trend
     # Used to prevent LONG signals in bearish markets and SHORT in bullish markets
     try:
