@@ -1,7 +1,9 @@
-# Updated telebot/sender.py to implement user-specified daily report format and additional commands
+# Telegram bot sender module to handle signal notifications and commands
+# Added /report command for daily summary and robust error handling
 import telegram
 import asyncio
 import pandas as pd
+import psutil
 from telegram.ext import Application, CommandHandler
 from telegram.error import Conflict
 from utils.logger import logger
@@ -13,10 +15,10 @@ CHAT_ID = "-4694205383"
 
 async def start(update, context):
     # Start command to initialize bot
-    await update.message.reply_text("Crypto Signal Bot is running! Use /summary for daily report, /status for bot health, /signal for latest signal, or /help for commands.")
+    await update.message.reply_text("Crypto Signal Bot is running! Use /summary or /report for daily report, /status for bot health, /signal for latest signal, or /help for commands.")
 
 async def status(update, context):
-    # Added status command to check bot health
+    # Status command to check bot health
     # Reports memory, CPU, and last signal time
     try:
         memory = psutil.Process().memory_info().rss / 1024 / 1024
@@ -39,7 +41,7 @@ async def status(update, context):
         await update.message.reply_text("Error checking status.")
 
 async def signal(update, context):
-    # Added signal command to fetch latest signal
+    # Signal command to fetch latest signal
     try:
         file_path = 'logs/signals_log_new.csv'
         if not os.path.exists(file_path):
@@ -67,7 +69,9 @@ async def signal(update, context):
             f"📈 24 Hour Volume: ${latest_signal['quote_volume_24h']:,.2f}\n"
             f"🔎 Conditions: {conditions_str}\n"
             f"🕒 Timestamp: {latest_signal['timestamp']}\n"
-            f"📊 Leverage: {latest_signal['leverage']}x"
+            f"📊 Leverage: {latest_signal['leverage']}x\n"
+            f"📈 BTC Trend: {latest_signal['btc_trend']:.2f}%\n"
+            f"📊 MA200: {latest_signal['ma200_status']}"
         )
         await update.message.reply_text(message)
     except Exception as e:
@@ -75,11 +79,12 @@ async def signal(update, context):
         await update.message.reply_text("Error fetching latest signal.")
 
 async def help(update, context):
-    # Added help command to list available commands
+    # Help command to list available commands
     message = (
         "📚 Available Commands:\n"
         "/start - Initialize the bot\n"
         "/summary - Get daily trading summary\n"
+        "/report - Get daily trading summary (same as /summary)\n"
         "/status - Check bot health\n"
         "/signal - Get latest signal\n"
         "/help - List all commands"
@@ -87,13 +92,31 @@ async def help(update, context):
     await update.message.reply_text(message)
 
 async def generate_daily_summary():
-    # Updated to implement user-specified daily report format
-    # Counts TP1/2/3/SL hits, excludes symbol details
+    # Generate daily trading summary in user-specified format
+    # Used for /summary, /report, and scheduled reports
     try:
         file_path = 'logs/signals_log_new.csv'
         if not os.path.exists(file_path):
             logger.warning("Signals log file not found")
-            return None
+            return (
+                f"📊 Daily Trading Summary ({datetime.utcnow().date()})\n"
+                f"📈 Total Signals: 0\n"
+                f"📅 Yesterday's Signals: 0\n"
+                f"🚀 Long Signals: 0\n"
+                f"📉 Short Signals: 0\n"
+                f"🎯 Successful Signals: 0 (0.00%)\n"
+                f"🔍 Average Confidence: 0.00%\n"
+                f"🏆 Top Symbol: None\n"
+                f"📊 Most Active Timeframe: None\n"
+                f"⚡ Total Volume Analyzed: 0 (USDT)\n"
+                f"🔎 Signal Status Breakdown:\n"
+                f"   - TP1 Hit: 0\n"
+                f"   - TP2 Hit: 0\n"
+                f"   - TP3 Hit: 0\n"
+                f"   - SL Hit: 0\n"
+                f"   - Pending: 0\n"
+                f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            )
 
         df = pd.read_csv(file_path)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -128,12 +151,12 @@ async def generate_daily_summary():
         total_signals = len(df_today)
         long_signals = len(df_today[df_today['direction'] == 'LONG'])
         short_signals = len(df_today[df_today['direction'] == 'SHORT'])
-        successful_signals = len(df_today[df_today['status'].isin(['TP1 Hit', 'TP2 Hit', 'TP3 Hit'])])
-        tp1_hits = len(df_today[df_today['status'] == 'TP1 Hit'])
-        tp2_hits = len(df_today[df_today['status'] == 'TP2 Hit'])
-        tp3_hits = len(df_today[df_today['status'] == 'TP3 Hit'])
-        sl_hits = len(df_today[df_today['status'] == 'SL Hit'])
-        pending_signals = len(df_today[df_today['status'] == 'Pending'])
+        successful_signals = len(df_today[df_today['status'].isin(['tp1_hit', 'tp2_hit', 'tp3_hit'])])
+        tp1_hits = len(df_today[df_today['status'] == 'tp1_hit'])
+        tp2_hits = len(df_today[df_today['status'] == 'tp2_hit'])
+        tp3_hits = len(df_today[df_today['status'] == 'tp3_hit'])
+        sl_hits = len(df_today[df_today['status'] == 'sl_hit'])
+        pending_signals = len(df_today[df_today['status'] == 'pending'])
         avg_confidence = df_today['confidence'].mean() if total_signals > 0 else 0
         most_active_timeframe = df_today['timeframe'].mode()[0] if total_signals > 0 else "None"
         total_volume = df_today['quote_volume_24h'].sum() if 'quote_volume_24h' in df_today else 0
@@ -177,9 +200,21 @@ async def summary(update, context):
     else:
         await update.message.reply_text("No signals available for today.")
 
+async def report(update, context):
+    # Handle /report command (same as /summary)
+    # Added for user convenience and scheduled reporting
+    if str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("Unauthorized access.")
+        return
+    report = await generate_daily_summary()
+    if report:
+        await update.message.reply_text(report)
+    else:
+        await update.message.reply_text("No signals available for today.")
+
 async def send_signal(signal):
-    # Updated to implement user-specified signal format without symbol
-    # Added leverage and improved error handling
+    # Send signal to Telegram with user-specified format
+    # Added btc_trend and ma200_status to signal message
     try:
         bot = telegram.Bot(token=BOT_TOKEN)
         conditions_str = ", ".join(signal.get('conditions', [])) or "None"
@@ -199,16 +234,39 @@ async def send_signal(signal):
             f"📈 24 Hour Volume: ${signal['quote_volume_24h']:,.2f}\n"
             f"🔎 Conditions: {conditions_str}\n"
             f"🕒 Timestamp: {signal['timestamp']}\n"
-            f"📊 Leverage: {signal['leverage']}x"
+            f"📊 Leverage: {signal['leverage']}x\n"
+            f"📈 BTC Trend: {signal['btc_trend']:.2f}%\n"
+            f"📊 MA200: {signal['ma200_status']}"
         )
         await bot.send_message(chat_id=CHAT_ID, text=message)
         logger.info(f"Signal sent to Telegram: {signal['direction']}")
     except Exception as e:
         logger.error(f"Error sending signal to Telegram: {str(e)}")
 
+async def schedule_daily_report():
+    # Schedule daily report at 00:00 UTC
+    # Sends report to Telegram using generate_daily_summary
+    while True:
+        try:
+            now = datetime.utcnow()
+            next_report = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            if now.hour >= 0:
+                next_report += timedelta(days=1)
+            wait_seconds = (next_report - now).total_seconds()
+            logger.info(f"Waiting {wait_seconds:.0f} seconds for next daily report")
+            await asyncio.sleep(wait_seconds)
+            report = await generate_daily_summary()
+            if report:
+                bot = telegram.Bot(token=BOT_TOKEN)
+                await bot.send_message(chat_id=CHAT_ID, text=report)
+                logger.info("Daily report sent to Telegram")
+        except Exception as e:
+            logger.error(f"Error in scheduled report: {str(e)}")
+            await asyncio.sleep(60)  # Retry after 1 minute
+
 async def start_bot():
-    # Start Telegram bot with polling
-    # Added error handling and conflict resolution
+    # Start Telegram bot with polling and scheduled reports
+    # Added robust error handling and conflict resolution
     try:
         bot = telegram.Bot(token=BOT_TOKEN)
         await bot.delete_webhook(drop_pending_updates=True)
@@ -227,11 +285,14 @@ async def start_bot():
         application = Application.builder().token(BOT_TOKEN).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("summary", summary))
+        application.add_handler(CommandHandler("report", report))
         application.add_handler(CommandHandler("status", status))
         application.add_handler(CommandHandler("signal", signal))
         application.add_handler(CommandHandler("help", help))
         await application.initialize()
         await application.start()
+        # Start scheduled daily report
+        asyncio.create_task(schedule_daily_report())
         await application.updater.start_polling(
             drop_pending_updates=True,
             poll_interval=4.0,
@@ -241,3 +302,4 @@ async def start_bot():
         logger.info("Telegram polling started successfully")
     except Exception as e:
         logger.error(f"Error starting Telegram bot: {str(e)}")
+        await asyncio.sleep(60)  # Retry after 1 minute
