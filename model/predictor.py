@@ -1,4 +1,4 @@
-# Updated model/predictor.py to address MACD bearish LONG signal issue, TP1/2/3 possibility clamping, and add dynamic leverage
+# Updated model/predictor.py to address MACD bearish LONG signal issue, TP1/2/3 possibility clamping, add dynamic leverage, and prevent trend bias
 import pandas as pd
 import numpy as np
 import asyncio
@@ -14,11 +14,13 @@ from utils.logger import logger
 
 class SignalPredictor:
     def __init__(self):
-        self.min_data_points = 50  # Increased for MACD fix
+        # Set minimum data points required for analysis
+        self.min_data_points = 200  # Increased to 200 for 200-day MA calculation
         logger.info("Signal Predictor initialized")
 
     # Add Trade Duration based on timeframe
     def get_trade_duration(self, timeframe: str) -> str:
+        # Define trade duration based on timeframe for signal metadata
         durations = {
             '15m': 'Up to 1 hour',
             '1h': 'Up to 6 hours',
@@ -29,8 +31,8 @@ class SignalPredictor:
 
     # Calculate dynamic leverage based on confidence and ADX
     def calculate_leverage(self, confidence: float, adx: float) -> int:
-        # Added dynamic leverage calculation for 10x-40x range
-        # Leverage scales with confidence and trend strength (ADX)
+        # Calculate leverage (10x-40x) based on confidence and ADX strength
+        # Higher confidence and ADX yield higher leverage
         try:
             if confidence > 80 and adx > 20:
                 return 40
@@ -44,7 +46,9 @@ class SignalPredictor:
             logger.error(f"Error calculating leverage: {str(e)}")
             return 10
 
-    async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> dict:
+    async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str, btc_trend: float = 0) -> dict:
+        # Predict trading signal with trend bias prevention
+        # Added btc_trend parameter to incorporate market context
         try:
             if df is None or len(df) < self.min_data_points:
                 logger.warning(f"[{symbol}] Insufficient data for {timeframe}: {len(df) if df is not None else 'None'}")
@@ -60,23 +64,46 @@ class SignalPredictor:
 
             latest = df.iloc[-1]
             conditions = []
-            logger.info(f"[{symbol}] {timeframe} - RSI: {latest['rsi']:.2f}, MACD: {latest['macd']:.2f}, MACD Signal: {latest['macd_signal']:.2f}, ADX: {latest['adx']:.2f}, Close: {latest['close']:.2f}")
+            logger.info(f"[{symbol}] {timeframe} - RSI: {latest['rsi']:.2f}, MACD: {latest['macd']:.2f}, MACD Signal: {latest['macd_signal']:.2f}, ADX: {latest['adx']:.2f}, Close: {latest['close']:.2f}, MA200: {latest.get('ma200', 0):.2f}")
 
             # RSI conditions
+            # Set RSI < 42 for oversold (potential LONG opportunity)
             if latest['rsi'] < 42:
                 conditions.append("Oversold RSI")
+            # Set RSI > 58 for overbought (potential SHORT opportunity)
             elif latest['rsi'] > 58:
                 conditions.append("Overbought RSI")
+            # Handle neutral RSI (45-55) with stricter conditions
+            elif 45 <= latest['rsi'] <= 55:
+                if latest['adx'] > 20 or latest['close'] > latest.get('ma50', 0):
+                    conditions.append("Neutral RSI with Strong Trend")
+                else:
+                    logger.info(f"[{symbol}] Neutral RSI ({latest['rsi']:.2f}) without strong trend, skipping")
+                    return None
 
             # MACD conditions
+            # Bullish MACD for LONG signals
             if latest['macd'] > latest['macd_signal']:
                 conditions.append("Bullish MACD")
+            # Bearish MACD for SHORT signals
             elif latest['macd'] < latest['macd_signal']:
                 conditions.append("Bearish MACD")
 
             # ADX condition
-            if latest['adx'] > 8:
+            # Set ADX > 15 to ensure strong trend (prevents signals in weak markets)
+            if latest['adx'] > 15:
                 conditions.append("Strong Trend")
+            else:
+                logger.info(f"[{symbol}] Weak trend (ADX: {latest['adx']:.2f} <= 15), skipping")
+                return None
+
+            # 200-day MA condition for global trend
+            # Price below MA200 indicates bearish trend, skip LONG signals
+            if 'ma200' in latest and latest['close'] < latest['ma200']:
+                conditions.append("Bearish MA200")
+            # Price above MA200 indicates bullish trend, skip SHORT signals
+            elif 'ma200' in latest and latest['close'] > latest['ma200']:
+                conditions.append("Bullish MA200")
 
             # Candlestick patterns
             if is_bullish_engulfing(df).iloc[-1]:
@@ -110,44 +137,73 @@ class SignalPredictor:
             logger.info(f"[{symbol}] {timeframe} - Conditions: {', '.join(conditions) if conditions else 'None'}")
 
             # Confidence calculation
+            # Base confidence set to 40%
             confidence = 40.0
+            # Add 15% for MACD signals
             if "Bullish MACD" in conditions or "Bearish MACD" in conditions:
                 confidence += 15.0
+            # Reduced Candlestick weight to 10% to prevent bias
             if "Bullish Engulfing" in conditions or "Bearish Engulfing" in conditions or "Hammer" in conditions or "Shooting Star" in conditions:
-                confidence += 15.0
+                confidence += 10.0
+            # Add 8% for strong ADX trend
             if "Strong Trend" in conditions:
                 confidence += 8.0
+            # Add 10% for support/resistance proximity
             if "Near Support" in conditions or "Near Resistance" in conditions:
                 confidence += 10.0
+            # Add 10% for high volume
             if "High Volume" in conditions:
                 confidence += 10.0
+            # Add 5% for RSI signals
             if "Oversold RSI" in conditions or "Overbought RSI" in conditions:
                 confidence += 5.0
+            # Reduced Three Soldiers/Crows weight to 10%
             if "Three White Soldiers" in conditions or "Three Black Crows" in conditions:
-                confidence += 15.0
+                confidence += 10.0
+            # Add 5% for Doji
             if "Doji" in conditions:
                 confidence += 5.0
             # Clamp confidence to 0-100%
-            # Fixed issue where confidence could exceed 100%
             confidence = min(max(confidence, 0), 100)
 
-            # Require minimum conditions (user to adjust)
-            if len(conditions) < 3:
-                logger.info(f"[{symbol}] Insufficient conditions ({len(conditions)}) for {timeframe}")
+            # Require minimum conditions
+            # Set minimum conditions to 4 for robust signals
+            if len(conditions) < 4:
+                logger.info(f"[{symbol}] Insufficient conditions ({len(conditions)} < 4) for {timeframe}")
                 return None
 
-            # Direction logic with MACD validation
-            # Fixed issue where bearish MACD led to LONG signals
+            # Direction logic with MACD and MA200 validation
+            # Prevent LONG in bearish markets and SHORT in bullish markets
             direction = None
             bullish_conditions = ["Bullish MACD", "Oversold RSI", "Bullish Engulfing", "Hammer", "Near Support", "Three White Soldiers"]
             bearish_conditions = ["Bearish MACD", "Overbought RSI", "Bearish Engulfing", "Shooting Star", "Near Resistance", "Three Black Crows"]
-            if any(c in conditions for c in bullish_conditions) and "Bullish MACD" in conditions and confidence >= 40.0:
-                # Ensure no LONG signal if overbought RSI and near resistance
+
+            # LONG signal logic
+            if (any(c in conditions for c in bullish_conditions) and 
+                "Bullish MACD" in conditions and 
+                confidence >= 40.0 and
+                "Bearish MA200" not in conditions):  # Prevent LONG if below MA200
+                # Skip LONG if overbought RSI and near resistance
                 if "Overbought RSI" in conditions and "Near Resistance" in conditions:
                     logger.info(f"[{symbol}] Skipped LONG due to Overbought RSI and Near Resistance")
                     return None
+                # Skip LONG if BTC trend is strongly bearish
+                if btc_trend < -5:
+                    if confidence < 80:
+                        logger.info(f"[{symbol}] Skipped LONG due to bearish BTC trend ({btc_trend:.2f}%) and low confidence")
+                        return None
                 direction = "LONG"
-            elif any(c in conditions for c in bearish_conditions) and "Bearish MACD" in conditions and confidence >= 40.0:
+            
+            # SHORT signal logic
+            elif (any(c in conditions for c in bearish_conditions) and 
+                  "Bearish MACD" in conditions and 
+                  confidence >= 40.0 and
+                  "Bullish MA200" not in conditions):  # Prevent SHORT if above MA200
+                # Skip SHORT if BTC trend is strongly bullish
+                if btc_trend > 5:
+                    if confidence < 80:
+                        logger.info(f"[{symbol}] Skipped SHORT due to bullish BTC trend ({btc_trend:.2f}%) and low confidence")
+                        return None
                 direction = "SHORT"
 
             if not direction:
@@ -206,10 +262,12 @@ class SignalPredictor:
                 'trade_duration': self.get_trade_duration(timeframe),
                 'timestamp': pd.Timestamp.now().isoformat(),
                 'macd_status': 'bullish' if latest['macd'] > latest['macd_signal'] else 'bearish',
-                'leverage': leverage  # Added dynamic leverage
+                'leverage': leverage,
+                'btc_trend': btc_trend,  # Added BTC trend to signal metadata
+                'ma200_status': 'bullish' if latest['close'] > latest.get('ma200', float('inf')) else 'bearish'
             }
 
-            logger.info(f"[{symbol}] Signal generated for {timeframe}: {direction}, Confidence: {signal['confidence']}%, TP1: {signal['tp1']:.4f} ({tp1_percent:.2f}%)")
+            logger.info(f"[{symbol}] Signal generated for {timeframe}: {direction}, Confidence: {signal['confidence']}%, TP1: {signal['tp1']:.4f} ({tp1_percent:.2f}%), BTC Trend: {btc_trend:.2f}%, MA200: {signal['ma200_status']}")
             return signal
 
         except Exception as e:
