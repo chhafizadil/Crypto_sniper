@@ -1,5 +1,4 @@
-# Updated model/predictor.py to address TP1 1-2% hit, Trade Duration, soft conditions, MACD zero fix, and Trade Type: None
-# Fixes applied to resolve classify_trade() missing timeframe error and soften TP1 range
+# Updated model/predictor.py to address MACD bearish LONG signal issue, TP1/2/3 possibility clamping, and add dynamic leverage
 import pandas as pd
 import numpy as np
 import asyncio
@@ -28,6 +27,23 @@ class SignalPredictor:
         }
         return durations.get(timeframe, 'Unknown')
 
+    # Calculate dynamic leverage based on confidence and ADX
+    def calculate_leverage(self, confidence: float, adx: float) -> int:
+        # Added dynamic leverage calculation for 10x-40x range
+        # Leverage scales with confidence and trend strength (ADX)
+        try:
+            if confidence > 80 and adx > 20:
+                return 40
+            elif confidence > 70 and adx > 15:
+                return 30
+            elif confidence > 60 and adx > 10:
+                return 20
+            else:
+                return 10
+        except Exception as e:
+            logger.error(f"Error calculating leverage: {str(e)}")
+            return 10
+
     async def predict_signal(self, symbol: str, df: pd.DataFrame, timeframe: str) -> dict:
         try:
             if df is None or len(df) < self.min_data_points:
@@ -46,18 +62,20 @@ class SignalPredictor:
             conditions = []
             logger.info(f"[{symbol}] {timeframe} - RSI: {latest['rsi']:.2f}, MACD: {latest['macd']:.2f}, MACD Signal: {latest['macd_signal']:.2f}, ADX: {latest['adx']:.2f}, Close: {latest['close']:.2f}")
 
-            # Soften conditions
-            if latest['rsi'] < 42:  # Softened from 35
+            # RSI conditions
+            if latest['rsi'] < 42:
                 conditions.append("Oversold RSI")
-            elif latest['rsi'] > 58:  # Softened from 65
+            elif latest['rsi'] > 58:
                 conditions.append("Overbought RSI")
 
-            if latest['macd'] > latest['macd_signal']:  # Removed zero check for MACD
+            # MACD conditions
+            if latest['macd'] > latest['macd_signal']:
                 conditions.append("Bullish MACD")
             elif latest['macd'] < latest['macd_signal']:
                 conditions.append("Bearish MACD")
 
-            if latest['adx'] > 8:  # Softened from 20
+            # ADX condition
+            if latest['adx'] > 8:
                 conditions.append("Strong Trend")
 
             # Candlestick patterns
@@ -76,23 +94,23 @@ class SignalPredictor:
             if is_three_black_crows(df).iloc[-1]:
                 conditions.append("Three Black Crows")
 
-            # Support/Resistance proximity (softened range to 10%)
+            # Support/Resistance proximity
             current_price = latest['close']
             support = sr_levels['support']
             resistance = sr_levels['resistance']
-            if abs(current_price - support) / current_price < 0.1:  # Softened from 0.03
+            if abs(current_price - support) / current_price < 0.1:
                 conditions.append("Near Support")
             if abs(current_price - resistance) / current_price < 0.1:
                 conditions.append("Near Resistance")
 
-            # Volume confirmation (softened to 1.05x)
+            # Volume confirmation
             if 'volume_sma_20' in latest and latest['volume'] > latest['volume_sma_20'] * 1.05:
                 conditions.append("High Volume")
 
             logger.info(f"[{symbol}] {timeframe} - Conditions: {', '.join(conditions) if conditions else 'None'}")
 
-            # Confidence calculation with adjusted weights
-            confidence = 40.0  # Lowered base confidence
+            # Confidence calculation
+            confidence = 40.0
             if "Bullish MACD" in conditions or "Bearish MACD" in conditions:
                 confidence += 15.0
             if "Bullish Engulfing" in conditions or "Bearish Engulfing" in conditions or "Hammer" in conditions or "Shooting Star" in conditions:
@@ -109,34 +127,42 @@ class SignalPredictor:
                 confidence += 15.0
             if "Doji" in conditions:
                 confidence += 5.0
+            # Clamp confidence to 0-100%
+            # Fixed issue where confidence could exceed 100%
+            confidence = min(max(confidence, 0), 100)
 
-            # Require minimum 3 conditions to avoid false signals
+            # Require minimum conditions (user to adjust)
             if len(conditions) < 3:
                 logger.info(f"[{symbol}] Insufficient conditions ({len(conditions)}) for {timeframe}")
                 return None
 
-            # Direction logic
+            # Direction logic with MACD validation
+            # Fixed issue where bearish MACD led to LONG signals
             direction = None
             bullish_conditions = ["Bullish MACD", "Oversold RSI", "Bullish Engulfing", "Hammer", "Near Support", "Three White Soldiers"]
             bearish_conditions = ["Bearish MACD", "Overbought RSI", "Bearish Engulfing", "Shooting Star", "Near Resistance", "Three Black Crows"]
-            if any(c in conditions for c in bullish_conditions) and confidence >= 40.0:
+            if any(c in conditions for c in bullish_conditions) and "Bullish MACD" in conditions and confidence >= 40.0:
+                # Ensure no LONG signal if overbought RSI and near resistance
+                if "Overbought RSI" in conditions and "Near Resistance" in conditions:
+                    logger.info(f"[{symbol}] Skipped LONG due to Overbought RSI and Near Resistance")
+                    return None
                 direction = "LONG"
-            elif any(c in conditions for c in bearish_conditions) and confidence >= 40.0:
+            elif any(c in conditions for c in bearish_conditions) and "Bearish MACD" in conditions and confidence >= 40.0:
                 direction = "SHORT"
 
             if not direction:
                 logger.info(f"[{symbol}] No clear direction for {timeframe}")
                 return None
 
-            # Calculate TP/SL with softened range (0.5-3%)
-            atr = latest.get('atr', max(0.1 * latest['close'], 0.02))  # Increased ATR fallback
+            # Calculate TP/SL
+            atr = latest.get('atr', max(0.1 * latest['close'], 0.02))
             entry = current_price
             if direction == "LONG":
-                tp1 = entry + max(0.005 * entry, 0.5 * atr)  # Softened to 0.5-3% for TP1
+                tp1 = entry + max(0.005 * entry, 0.5 * atr)
                 tp2 = entry + max(0.015 * entry, 1.0 * atr)
                 tp3 = entry + max(0.03 * entry, 2.0 * atr)
-                sl = entry - max(0.008 * entry, 0.8 * atr)  # Tight SL
-            else:  # SHORT
+                sl = entry - max(0.008 * entry, 0.8 * atr)
+            else:
                 tp1 = entry - max(0.005 * entry, 0.5 * atr)
                 tp2 = entry - max(0.015 * entry, 1.0 * atr)
                 tp3 = entry - max(0.03 * entry, 2.0 * atr)
@@ -147,13 +173,18 @@ class SignalPredictor:
             if not (0.5 <= tp1_percent <= 3.0):
                 logger.warning(f"[{symbol}] TP1 out of 0.5-3% range ({tp1_percent:.2f}%), adjusting")
                 if direction == "LONG":
-                    tp1 = entry + 0.015 * entry  # Set to 1.5%
+                    tp1 = entry + 0.015 * entry
                 else:
                     tp1 = entry - 0.015 * entry
 
-            # Fix classify_trade call to include timeframe
-            # This resolves the error: classify_trade() missing 1 required positional argument: 'timeframe'
-            trade_type = classify_trade(confidence, timeframe) or "Scalp"  # Updated to pass timeframe, default to Scalp
+            # Calculate TP possibilities
+            # Clamped TP1/2/3 possibilities to 0-100% and linked to confidence
+            tp1_possibility = min(max(70.0 if confidence > 75 else 60.0, 0), 100)
+            tp2_possibility = min(max(50.0 if confidence > 75 else 40.0, 0), 100)
+            tp3_possibility = min(max(30.0 if confidence > 75 else 20.0, 0), 100)
+
+            trade_type = classify_trade(confidence, timeframe) or "Scalp"
+            leverage = self.calculate_leverage(confidence, latest['adx'])
 
             signal = {
                 'symbol': symbol,
@@ -166,14 +197,16 @@ class SignalPredictor:
                 'tp2': float(tp2),
                 'tp3': float(tp3),
                 'sl': float(sl),
-                'tp1_possibility': 70.0 if confidence > 75 else 60.0,
-                'tp2_possibility': 50.0 if confidence > 75 else 40.0,
-                'tp3_possibility': 30.0 if confidence > 75 else 20.0,
+                'tp1_possibility': float(tp1_possibility),
+                'tp2_possibility': float(tp2_possibility),
+                'tp3_possibility': float(tp3_possibility),
                 'volume': float(latest['volume']),
+                'quote_volume_24h': float(latest.get('quote_volume_24h', 0)),
                 'trade_type': trade_type,
-                'trade_duration': self.get_trade_duration(timeframe),  # Added Trade Duration
+                'trade_duration': self.get_trade_duration(timeframe),
                 'timestamp': pd.Timestamp.now().isoformat(),
-                'macd_status': latest['macd_status']  # Added macd_status for engine validation
+                'macd_status': 'bullish' if latest['macd'] > latest['macd_signal'] else 'bearish',
+                'leverage': leverage  # Added dynamic leverage
             }
 
             logger.info(f"[{symbol}] Signal generated for {timeframe}: {direction}, Confidence: {signal['confidence']}%, TP1: {signal['tp1']:.4f} ({tp1_percent:.2f}%)")
