@@ -1,0 +1,12 @@
+hooks:
+  post-deploy:
+    - mkdir -p logs && touch logs/signals_log_new.csv
+    - chmod 755 logs/  # Optional: اگر پرمیشنز کی ضرورت ہو
+    - echo "File created at $(date)" >> logs/deploy.log  # Optional: لاگ ریکارڈ کرنے کے لیے
+
+build:
+  command: echo "Building..."  # آپ کا بلڈ کمانڈ (اگر چاہیں)
+
+routes:
+  - path: /
+    port: 8000
