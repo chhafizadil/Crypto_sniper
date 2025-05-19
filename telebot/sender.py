@@ -1,9 +1,10 @@
 # Telegram bot sender module to handle signal notifications and commands
-# Added /report command for daily summary and robust error handling
+# Updated to fix /report, /summary, /signal, /status commands, handle empty CSV, and add Top Symbol
 import telegram
 import asyncio
 import pandas as pd
 import psutil
+import os  # Added for file existence checks
 from telegram.ext import Application, CommandHandler
 from telegram.error import Conflict
 from utils.logger import logger
@@ -19,16 +20,20 @@ async def start(update, context):
 
 async def status(update, context):
     # Status command to check bot health
-    # Reports memory, CPU, and last signal time
+    # Reports memory, CPU, and last signal time with robust error handling
     try:
-        memory = psutil.Process().memory_info().rss / 1024 / 1024
-        cpu = psutil.cpu_percent(interval=0.1)
+        memory = psutil.Process().memory_info().rss / 1024 / 1024  # Memory usage in MB
+        cpu = psutil.cpu_percent(interval=0.1)  # CPU usage percentage
         file_path = 'logs/signals_log_new.csv'
-        last_signal = "Unknown"
+        last_signal = "No signals yet"
         if os.path.exists(file_path):
-            df = pd.read_csv(file_path)
-            if not df.empty:
-                last_signal = df['timestamp'].iloc[-1]
+            try:
+                df = pd.read_csv(file_path)
+                if not df.empty:
+                    last_signal = df['timestamp'].iloc[-1]
+            except Exception as e:
+                logger.warning(f"Error reading CSV for status: {str(e)}")
+                last_signal = "Error reading signals log"
         message = (
             f"🩺 Bot Status\n"
             f"📊 Memory Usage: {memory:.2f} MB\n"
@@ -38,10 +43,11 @@ async def status(update, context):
         await update.message.reply_text(message)
     except Exception as e:
         logger.error(f"Error generating status: {str(e)}")
-        await update.message.reply_text("Error checking status.")
+        await update.message.reply_text("Error checking status. Please check logs.")
 
 async def signal(update, context):
     # Signal command to fetch latest signal
+    # Updated to handle missing conditions column and empty CSV
     try:
         file_path = 'logs/signals_log_new.csv'
         if not os.path.exists(file_path):
@@ -52,7 +58,8 @@ async def signal(update, context):
             await update.message.reply_text("No signals available.")
             return
         latest_signal = df.iloc[-1]
-        conditions_str = latest_signal['conditions']
+        # Handle missing conditions column
+        conditions_str = latest_signal.get('conditions', 'None') if 'conditions' in latest_signal else 'None'
         message = (
             f"📈 Trading Signal\n"
             f"📊 Direction: {latest_signal['direction']}\n"
@@ -76,7 +83,7 @@ async def signal(update, context):
         await update.message.reply_text(message)
     except Exception as e:
         logger.error(f"Error fetching latest signal: {str(e)}")
-        await update.message.reply_text("Error fetching latest signal.")
+        await update.message.reply_text("Error fetching latest signal. Please check logs.")
 
 async def help(update, context):
     # Help command to list available commands
@@ -93,7 +100,7 @@ async def help(update, context):
 
 async def generate_daily_summary():
     # Generate daily trading summary in user-specified format
-    # Used for /summary, /report, and scheduled reports
+    # Updated to handle empty CSV, add Top Symbol, and fix error handling
     try:
         file_path = 'logs/signals_log_new.csv'
         if not os.path.exists(file_path):
@@ -160,6 +167,8 @@ async def generate_daily_summary():
         avg_confidence = df_today['confidence'].mean() if total_signals > 0 else 0
         most_active_timeframe = df_today['timeframe'].mode()[0] if total_signals > 0 else "None"
         total_volume = df_today['quote_volume_24h'].sum() if 'quote_volume_24h' in df_today else 0
+        # Added Top Symbol calculation based on most frequent symbol
+        top_symbol = df_today['symbol'].mode()[0] if total_signals > 0 else "None"
 
         successful_percentage = (successful_signals / total_signals * 100) if total_signals > 0 else 0
 
@@ -171,7 +180,7 @@ async def generate_daily_summary():
             f"📉 Short Signals: {short_signals}\n"
             f"🎯 Successful Signals: {successful_signals} ({successful_percentage:.2f}%)\n"
             f"🔍 Average Confidence: {avg_confidence:.2f}%\n"
-            f"🏆 Top Symbol: None\n"
+            f"🏆 Top Symbol: {top_symbol}\n"
             f"📊 Most Active Timeframe: {most_active_timeframe}\n"
             f"⚡ Total Volume Analyzed: {total_volume:,.0f} (USDT)\n"
             f"🔎 Signal Status Breakdown:\n"
@@ -186,7 +195,11 @@ async def generate_daily_summary():
         return report
     except Exception as e:
         logger.error(f"Error generating daily report: {str(e)}")
-        return None
+        return (
+            f"📊 Daily Trading Summary ({datetime.utcnow().date()})\n"
+            f"⚠️ Error generating report: Please check logs\n"
+            f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+        )
 
 async def summary(update, context):
     # Handle /summary command for daily report
@@ -195,26 +208,20 @@ async def summary(update, context):
         await update.message.reply_text("Unauthorized access.")
         return
     report = await generate_daily_summary()
-    if report:
-        await update.message.reply_text(report)
-    else:
-        await update.message.reply_text("No signals available for today.")
+    await update.message.reply_text(report)
 
 async def report(update, context):
     # Handle /report command (same as /summary)
-    # Added for user convenience and scheduled reporting
+    # Updated to ensure consistent report format
     if str(update.message.chat_id) != CHAT_ID:
         await update.message.reply_text("Unauthorized access.")
         return
     report = await generate_daily_summary()
-    if report:
-        await update.message.reply_text(report)
-    else:
-        await update.message.reply_text("No signals available for today.")
+    await update.message.reply_text(report)
 
 async def send_signal(signal):
     # Send signal to Telegram with user-specified format
-    # Added btc_trend and ma200_status to signal message
+    # Updated to handle missing conditions and ensure btc_trend is included
     try:
         bot = telegram.Bot(token=BOT_TOKEN)
         conditions_str = ", ".join(signal.get('conditions', [])) or "None"
