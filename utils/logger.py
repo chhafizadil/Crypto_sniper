@@ -1,27 +1,32 @@
-# Updated logger to ensure robust CSV logging and archiving
+# Updated logger to ensure robust CSV logging, archiving, and include market trend data
 import os
 import logging
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 import pandas as pd
 
+# Set up logs directory
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Configure log formatter
 log_formatter = logging.Formatter(
     fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
+# Set up file handler with rotation
 log_file = os.path.join(LOG_DIR, "bot.log")
 file_handler = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=3)
 file_handler.setFormatter(log_formatter)
 file_handler.setLevel(logging.INFO)
 
+# Set up console handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 console_handler.setLevel(logging.INFO)
 
+# Configure logger
 logger = logging.getLogger("crypto-signal-bot")
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
@@ -29,8 +34,8 @@ logger.addHandler(console_handler)
 logger.propagate = False
 
 def log_signal_to_csv(signal):
-    # Updated CSV logging to include all required fields
-    # Fixed issue where CSV could fail due to missing fields
+    # Log signal data to CSV with all required fields including market trend
+    # Added btc_trend and ma200_status for better signal context
     try:
         csv_path = "logs/signals_log_new.csv"
         timestamp = signal.get("timestamp", pd.Timestamp.now()).strftime('%Y-%m-%d %H:%M:%S')
@@ -53,7 +58,9 @@ def log_signal_to_csv(signal):
             "quote_volume_24h": [signal.get("quote_volume_24h", 0)],
             "status": [signal.get("status", "pending")],
             "hit_timestamp": [signal.get("hit_timestamp", None)],
-            "leverage": [signal.get("leverage", 10)]
+            "leverage": [signal.get("leverage", 10)],
+            "btc_trend": [signal.get("btc_trend", 0)],  # Added BTC trend
+            "ma200_status": [signal.get("ma200_status", "unknown")]  # Added MA200 status
         })
 
         if os.path.exists(csv_path):
@@ -74,6 +81,7 @@ def log_signal_to_csv(signal):
 
 def archive_old_logs(csv_path):
     # Archive old logs to prevent file size issues
+    # Keep logs for last 7 days, archive older data
     try:
         if not os.path.exists(csv_path):
             return
