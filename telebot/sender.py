@@ -1,4 +1,4 @@
-# Updated telebot/sender.py to match requested signal format, add Trade Duration, and include daily report generation
+# Updated telebot/sender.py to implement user-specified daily report format and additional commands
 import telegram
 import asyncio
 import pandas as pd
@@ -12,9 +12,83 @@ BOT_TOKEN = "7620836100:AAGY7xBjNJMKlzrDDMrQ5hblXzd_k_BvEtU"
 CHAT_ID = "-4694205383"
 
 async def start(update, context):
-    await update.message.reply_text("Crypto Signal Bot is running! Use /summary to get daily report.")
+    # Start command to initialize bot
+    await update.message.reply_text("Crypto Signal Bot is running! Use /summary for daily report, /status for bot health, /signal for latest signal, or /help for commands.")
+
+async def status(update, context):
+    # Added status command to check bot health
+    # Reports memory, CPU, and last signal time
+    try:
+        memory = psutil.Process().memory_info().rss / 1024 / 1024
+        cpu = psutil.cpu_percent(interval=0.1)
+        file_path = 'logs/signals_log_new.csv'
+        last_signal = "Unknown"
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            if not df.empty:
+                last_signal = df['timestamp'].iloc[-1]
+        message = (
+            f"🩺 Bot Status\n"
+            f"📊 Memory Usage: {memory:.2f} MB\n"
+            f"⚡ CPU Usage: {cpu:.1f}%\n"
+            f"🕒 Last Signal: {last_signal}"
+        )
+        await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Error generating status: {str(e)}")
+        await update.message.reply_text("Error checking status.")
+
+async def signal(update, context):
+    # Added signal command to fetch latest signal
+    try:
+        file_path = 'logs/signals_log_new.csv'
+        if not os.path.exists(file_path):
+            await update.message.reply_text("No signals available.")
+            return
+        df = pd.read_csv(file_path)
+        if df.empty:
+            await update.message.reply_text("No signals available.")
+            return
+        latest_signal = df.iloc[-1]
+        conditions_str = latest_signal['conditions']
+        message = (
+            f"📈 Trading Signal\n"
+            f"📊 Direction: {latest_signal['direction']}\n"
+            f"⏰ Timeframe: {latest_signal['timeframe']}\n"
+            f"⏳ Trade Duration: {latest_signal['trade_duration']}\n"
+            f"💰 Entry Price: {latest_signal['entry']:.4f}\n"
+            f"🎯 TP1: {latest_signal['tp1']:.4f} ({latest_signal['tp1_possibility']:.1f}%)\n"
+            f"🎯 TP2: {latest_signal['tp2']:.4f} ({latest_signal['tp2_possibility']:.1f}%)\n"
+            f"🎯 TP3: {latest_signal['tp3']:.4f} ({latest_signal['tp3_possibility']:.1f}%)\n"
+            f"🛑 SL: {latest_signal['sl']:.4f}\n"
+            f"🔍 Confidence: {latest_signal['confidence']:.2f}%\n"
+            f"⚡ Trade Type: {latest_signal['trade_type']}\n"
+            f"📈 1 hour Volume: ${latest_signal['volume']:,.2f}\n"
+            f"📈 24 Hour Volume: ${latest_signal['quote_volume_24h']:,.2f}\n"
+            f"🔎 Conditions: {conditions_str}\n"
+            f"🕒 Timestamp: {latest_signal['timestamp']}\n"
+            f"📊 Leverage: {latest_signal['leverage']}x"
+        )
+        await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Error fetching latest signal: {str(e)}")
+        await update.message.reply_text("Error fetching latest signal.")
+
+async def help(update, context):
+    # Added help command to list available commands
+    message = (
+        "📚 Available Commands:\n"
+        "/start - Initialize the bot\n"
+        "/summary - Get daily trading summary\n"
+        "/status - Check bot health\n"
+        "/signal - Get latest signal\n"
+        "/help - List all commands"
+    )
+    await update.message.reply_text(message)
 
 async def generate_daily_summary():
+    # Updated to implement user-specified daily report format
+    # Counts TP1/2/3/SL hits, excludes symbol details
     try:
         file_path = 'logs/signals_log_new.csv'
         if not os.path.exists(file_path):
@@ -22,46 +96,68 @@ async def generate_daily_summary():
             return None
 
         df = pd.read_csv(file_path)
-        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df_yesterday = df[df['timestamp'].dt.date == pd.to_datetime(yesterday).date()]
+        today = datetime.utcnow().date()
+        df_today = df[df['timestamp'].dt.date == today]
 
-        if df_yesterday.empty:
-            logger.info("No signals found for yesterday")
-            return None
-
-        total_signals = len(df_yesterday)
-        successful_signals = len(df_yesterday[df_yesterday['status'] == 'successful'])
-        failed_signals = len(df_yesterday[df_yesterday['status'] == 'failed'])
-        pending_signals = len(df_yesterday[df_yesterday['status'] == 'pending'])
-
-        successful_percentage = (successful_signals / total_signals * 100) if total_signals > 0 else 0
-        failed_percentage = (failed_signals / total_signals * 100) if total_signals > 0 else 0
-        pending_percentage = (pending_signals / total_signals * 100) if total_signals > 0 else 0
-
-        top_signals = df_yesterday.sort_values(by='confidence', ascending=False).head(5)
-        top_signals_text = ""
-        for idx, row in top_signals.iterrows():
-            conditions_str = ", ".join(eval(row['conditions']) if isinstance(row['conditions'], str) else row['conditions'])
-            top_signals_text += (
-                f"{idx + 1}. {row['symbol']} ({row['timeframe']}) - {row['direction']}\n"
-                f"   - Confidence: {row['confidence']:.1f}%\n"
-                f"   - Entry: ${row['entry']:.4f}\n"
-                f"   - TP1: ${row['tp1']:.4f} ({row['tp1_possibility']:.1f}%)\n"
-                f"   - TP2: ${row['tp2']:.4f} ({row['tp2_possibility']:.1f}%)\n"
-                f"   - TP3: ${row['tp3']:.4f} ({row['tp3_possibility']:.1f}%)\n"
-                f"   - SL: ${row['sl']:.4f}\n"
-                f"   - Status: {row['status'].capitalize()}\n"
-                f"   - Conditions: {conditions_str}\n"
+        if df_today.empty:
+            logger.info("No signals found for today")
+            return (
+                f"📊 Daily Trading Summary ({today})\n"
+                f"📈 Total Signals: 0\n"
+                f"📅 Yesterday's Signals: 0\n"
+                f"🚀 Long Signals: 0\n"
+                f"📉 Short Signals: 0\n"
+                f"🎯 Successful Signals: 0 (0.00%)\n"
+                f"🔍 Average Confidence: 0.00%\n"
+                f"🏆 Top Symbol: None\n"
+                f"📊 Most Active Timeframe: None\n"
+                f"⚡ Total Volume Analyzed: 0 (USDT)\n"
+                f"🔎 Signal Status Breakdown:\n"
+                f"   - TP1 Hit: 0\n"
+                f"   - TP2 Hit: 0\n"
+                f"   - TP3 Hit: 0\n"
+                f"   - SL Hit: 0\n"
+                f"   - Pending: 0\n"
+                f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
             )
 
+        yesterday = (datetime.utcnow() - timedelta(days=1)).date()
+        df_yesterday = df[df['timestamp'].dt.date == yesterday]
+
+        total_signals = len(df_today)
+        long_signals = len(df_today[df_today['direction'] == 'LONG'])
+        short_signals = len(df_today[df_today['direction'] == 'SHORT'])
+        successful_signals = len(df_today[df_today['status'].isin(['TP1 Hit', 'TP2 Hit', 'TP3 Hit'])])
+        tp1_hits = len(df_today[df_today['status'] == 'TP1 Hit'])
+        tp2_hits = len(df_today[df_today['status'] == 'TP2 Hit'])
+        tp3_hits = len(df_today[df_today['status'] == 'TP3 Hit'])
+        sl_hits = len(df_today[df_today['status'] == 'SL Hit'])
+        pending_signals = len(df_today[df_today['status'] == 'Pending'])
+        avg_confidence = df_today['confidence'].mean() if total_signals > 0 else 0
+        most_active_timeframe = df_today['timeframe'].mode()[0] if total_signals > 0 else "None"
+        total_volume = df_today['quote_volume_24h'].sum() if 'quote_volume_24h' in df_today else 0
+
+        successful_percentage = (successful_signals / total_signals * 100) if total_signals > 0 else 0
+
         report = (
-            f"📊 *Daily Signal Report - {yesterday}*\n"
-            f"🚀 Total Signals: {total_signals}\n"
-            f"✅ Successful Signals: {successful_signals} ({successful_percentage:.1f}%)\n"
-            f"❌ Failed Signals: {failed_signals} ({failed_percentage:.1f}%)\n"
-            f"⏳ Pending Signals: {pending_signals} ({pending_percentage:.1f}%)\n\n"
-            f"📈 Top Signals:\n{top_signals_text}"
+            f"📊 Daily Trading Summary ({today})\n"
+            f"📈 Total Signals: {total_signals}\n"
+            f"📅 Yesterday's Signals: {len(df_yesterday)}\n"
+            f"🚀 Long Signals: {long_signals}\n"
+            f"📉 Short Signals: {short_signals}\n"
+            f"🎯 Successful Signals: {successful_signals} ({successful_percentage:.2f}%)\n"
+            f"🔍 Average Confidence: {avg_confidence:.2f}%\n"
+            f"🏆 Top Symbol: None\n"
+            f"📊 Most Active Timeframe: {most_active_timeframe}\n"
+            f"⚡ Total Volume Analyzed: {total_volume:,.0f} (USDT)\n"
+            f"🔎 Signal Status Breakdown:\n"
+            f"   - TP1 Hit: {tp1_hits}\n"
+            f"   - TP2 Hit: {tp2_hits}\n"
+            f"   - TP3 Hit: {tp3_hits}\n"
+            f"   - SL Hit: {sl_hits}\n"
+            f"   - Pending: {pending_signals}\n"
+            f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
         logger.info("Daily report generated successfully")
         return report
@@ -70,18 +166,25 @@ async def generate_daily_summary():
         return None
 
 async def summary(update, context):
+    # Handle /summary command for daily report
+    # Added chat ID validation for security
+    if str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("Unauthorized access.")
+        return
     report = await generate_daily_summary()
     if report:
-        await update.message.reply_text(report, parse_mode='Markdown')
+        await update.message.reply_text(report)
     else:
-        await update.message.reply_text("No signals available for yesterday.")
+        await update.message.reply_text("No signals available for today.")
 
 async def send_signal(signal):
+    # Updated to implement user-specified signal format without symbol
+    # Added leverage and improved error handling
     try:
         bot = telegram.Bot(token=BOT_TOKEN)
         conditions_str = ", ".join(signal.get('conditions', [])) or "None"
         message = (
-            f"📈 *{signal['symbol']} Trading Signal*\n"
+            f"📈 Trading Signal\n"
             f"📊 Direction: {signal['direction']}\n"
             f"⏰ Timeframe: {signal['timeframe']}\n"
             f"⏳ Trade Duration: {signal['trade_duration']}\n"
@@ -92,16 +195,20 @@ async def send_signal(signal):
             f"🛑 SL: {signal['sl']:.4f}\n"
             f"🔍 Confidence: {signal['confidence']:.2f}%\n"
             f"⚡ Trade Type: {signal['trade_type']}\n"
-            f"📈 Volume: ${signal['volume']:,.2f}\n"
+            f"📈 1 hour Volume: ${signal['volume']:,.2f}\n"
+            f"📈 24 Hour Volume: ${signal['quote_volume_24h']:,.2f}\n"
             f"🔎 Conditions: {conditions_str}\n"
-            f"🕒 Timestamp: {signal['timestamp']}"
+            f"🕒 Timestamp: {signal['timestamp']}\n"
+            f"📊 Leverage: {signal['leverage']}x"
         )
-        await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode='Markdown')
-        logger.info(f"Signal sent to Telegram: {signal['symbol']} - {signal['direction']}")
+        await bot.send_message(chat_id=CHAT_ID, text=message)
+        logger.info(f"Signal sent to Telegram: {signal['direction']}")
     except Exception as e:
         logger.error(f"Error sending signal to Telegram: {str(e)}")
 
 async def start_bot():
+    # Start Telegram bot with polling
+    # Added error handling and conflict resolution
     try:
         bot = telegram.Bot(token=BOT_TOKEN)
         await bot.delete_webhook(drop_pending_updates=True)
@@ -120,6 +227,9 @@ async def start_bot():
         application = Application.builder().token(BOT_TOKEN).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("summary", summary))
+        application.add_handler(CommandHandler("status", status))
+        application.add_handler(CommandHandler("signal", signal))
+        application.add_handler(CommandHandler("help", help))
         await application.initialize()
         await application.start()
         await application.updater.start_polling(
