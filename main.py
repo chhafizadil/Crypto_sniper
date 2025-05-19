@@ -85,7 +85,8 @@ async def process_symbol(symbol, exchange, timeframes, btc_trend):
         if is_symbol_on_cooldown(symbol):
             return  # Skip if symbol is on cooldown
         logger.info(f"[{symbol}] Starting multi-timeframe analysis")
-        signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes, btc_trend=btc_trend)
+        signals = await analyze_symbol_multi_timeframe(symbol, exchange, timeframes)
+
         for timeframe, signal in signals.items():
             if signal and signal['confidence'] >= MIN_CONFIDENCE:  # Check if signal meets confidence threshold
                 signal['timestamp'] = datetime.now().isoformat()  # Add timestamp to signal
